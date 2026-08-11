@@ -1,0 +1,185 @@
+// ConsentFlow V2 Architecture Prisma Schema
+// Source of Truth: ConsentFlow_Architecture_v2_Antigravity specification
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// -----------------------------------------------------------------------------
+// ENUMS
+// -----------------------------------------------------------------------------
+
+enum UserRole {
+  CONSUMER
+  BUSINESS
+  REGULATOR
+}
+
+enum BusinessTier {
+  FREEMIUM
+  GROWTH
+  ENTERPRISE
+}
+
+enum ConsentAction {
+  GRANT
+  REVOKE
+  ACCESS
+  ERASURE
+  CORRECTION
+  NOMINATION
+}
+
+enum GrievanceType {
+  ACCESS
+  ERASURE
+  CORRECTION
+  NOMINATION
+}
+
+enum GrievanceStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  ESCALATED
+}
+
+enum WebhookStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  RETRYING
+  DLQ
+}
+
+// -----------------------------------------------------------------------------
+// MODELS
+// -----------------------------------------------------------------------------
+
+model User {
+  id            String            @id @default(cuid())
+  email         String            @unique
+  name          String
+  role          UserRole          @default(CONSUMER)
+  preferredLang String            @default("en")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  // Relations
+  consents      ConsentRecord[]
+  grievances    GrievanceTicket[]
+  business      Business?
+}
+
+model Business {
+  id          String            @id @default(cuid())
+  name        String
+  userId      String?           @unique
+  user        User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  webhookUrl  String?
+  apiKey      String?           @unique
+  tier        BusinessTier      @default(FREEMIUM)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relations
+  notices     ConsentNotice[]
+  consents    ConsentRecord[]
+  grievances  GrievanceTicket[]
+  webhookLogs WebhookDelivery[]
+}
+
+model ConsentNotice {
+  id                 String          @id @default(cuid())
+  businessId         String
+  business           Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  title              String
+  rawLegalText       String          @db.Text
+  simplifiedVersions Json?
+  purposes           Json
+  isActive           Boolean         @default(true)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  // Relations
+  consents           ConsentRecord[]
+}
+
+model ConsentRecord {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  noticeId   String
+  notice     ConsentNotice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  granted    Boolean    @default(true)
+  choices    Json
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime   @default(now())
+  revokedAt  DateTime?
+
+  // Relations
+  auditLogs  AuditLog[]
+}
+
+model AuditLog {
+  id           String        @id @default(cuid())
+  recordId     String
+  record       ConsentRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  action       ConsentAction
+  actorId      String
+  previousHash String?
+  currentHash  String
+  payload      Json
+  timestamp    DateTime      @default(now())
+
+  @@index([recordId, timestamp])
+  @@index([currentHash])
+}
+
+model GrievanceTicket {
+  id          String          @id @default(cuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId  String
+  business    Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  type        GrievanceType
+  description String          @db.Text
+  status      GrievanceStatus @default(OPEN)
+  slaDeadline DateTime
+  resolution  String?         @db.Text
+  createdAt   DateTime        @default(now())
+  resolvedAt  DateTime?
+  updatedAt   DateTime        @updatedAt
+
+  @@index([userId, status])
+  @@index([businessId, status])
+  @@index([slaDeadline])
+}
+
+model WebhookDelivery {
+  id             String        @id @default(cuid())
+  businessId     String
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  eventType      String
+  payload        Json
+  signature      String
+  status         WebhookStatus @default(PENDING)
+  responseStatus Int?
+  responseBody   String?       @db.Text
+  retryCount     Int           @default(0)
+  nextRetryAt    DateTime?
+  createdAt      DateTime      @default(now())
+  deliveredAt    DateTime?
+
+  @@index([businessId, status])
+  @@index([status, nextRetryAt])
+}
