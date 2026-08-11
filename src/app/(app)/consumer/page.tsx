@@ -97,7 +97,6 @@ export default async function ConsumerDashboard() {
                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 truncate max-w-[180px]">
                       {notice.business.name}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400">v{notice.version || '1.0'}</span>
                   </div>
                   <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors line-clamp-2">
                     {notice.title}

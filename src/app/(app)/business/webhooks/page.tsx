@@ -10,14 +10,14 @@ export default async function BusinessWebhooksPage() {
 
   const business = await prisma.business.findFirst({
     where: { userId: session?.user?.id || '' },
-    include: { webhooks: { orderBy: { createdAt: 'desc' }, take: 50 } },
+    include: { webhookLogs: { orderBy: { createdAt: 'desc' }, take: 50 } },
   }) || await prisma.business.findFirst({
-    include: { webhooks: { orderBy: { createdAt: 'desc' }, take: 50 } },
+    include: { webhookLogs: { orderBy: { createdAt: 'desc' }, take: 50 } },
   });
 
   const webhookUrl = business?.webhookUrl || 'https://webhook.site/demo-endpoint';
   const apiKey = business?.apiKey || 'cf_live_demo_secret_key';
-  const deliveries = business?.webhooks || [];
+  const deliveries = business?.webhookLogs || [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 space-y-8 selection:bg-purple-500 selection:text-slate-950">

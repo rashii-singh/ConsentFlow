@@ -42,7 +42,7 @@ export default function ConsumerGrievanceView({
   const [showForm, setShowForm] = useState(false);
 
   const [businessId, setBusinessId] = useState(businesses[0]?.id || '');
-  const [type, setType] = useState('CONSENT_WITHDRAWAL');
+  const [type, setType] = useState('ACCESS');
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -136,11 +136,10 @@ export default function ConsumerGrievanceView({
                 onChange={(e) => setType(e.target.value)}
                 className="w-full py-3 px-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs font-bold text-slate-100 outline-none"
               >
-                <option value="CONSENT_WITHDRAWAL">Consent Withdrawal Non-Compliance</option>
-                <option value="UNAUTHORIZED_PROCESSING">Unauthorized Data Processing</option>
-                <option value="DATA_ACCESS">Data Erasure / Access Request</option>
-                <option value="DATA_CORRECTION">Data Correction Request</option>
-                <option value="OTHER">Other DPDP Violation</option>
+                <option value="ACCESS">Right to Access Personal Data (Section 11)</option>
+                <option value="ERASURE">Right to Erasure & Deletion (Section 12)</option>
+                <option value="CORRECTION">Right to Correction & Updating (Section 12)</option>
+                <option value="NOMINATION">Right to Nominate Representative (Section 14)</option>
               </select>
             </div>
           </div>
@@ -211,7 +210,7 @@ export default function ConsumerGrievanceView({
                     <span className="text-[10px] font-mono text-amber-400 font-bold uppercase px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
                       Target: {g.business?.name || 'Data Fiduciary'}
                     </span>
-                    <h3 className="text-sm font-bold text-white mt-1">{g.subject}</h3>
+                    <h3 className="text-sm font-bold text-white mt-1">{g.type}</h3>
                   </div>
 
                   <div className="flex items-center space-x-2">
@@ -234,12 +233,12 @@ export default function ConsumerGrievanceView({
                   {g.description}
                 </p>
 
-                {g.resolutionNotes && (
+                {(g.resolution || g.resolutionNotes) && (
                   <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200 space-y-1 font-mono">
                     <span className="font-bold text-emerald-400 uppercase text-[10px]">
                       Fiduciary Resolution Notes ({new Date(g.resolvedAt || Date.now()).toLocaleDateString()}):
                     </span>
-                    <p>"{g.resolutionNotes}"</p>
+                    <p>"{g.resolution || g.resolutionNotes}"</p>
                   </div>
                 )}
               </div>

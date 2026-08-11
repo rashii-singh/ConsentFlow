@@ -227,7 +227,7 @@ export default function LandingPage() {
               <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">Layer 3: Cryptographic Audit Engine</span>
               <h4 className="text-sm font-bold text-white">Canonical SHA-256 Hash Chain SHA256(previousHash + payload)</h4>
             </div>
-            <span className="text-xs font-mono text-slate-400">Genesis Node -> Leaf Hash Verification</span>
+            <span className="text-xs font-mono text-slate-400">Genesis Node &rarr; Leaf Hash Verification</span>
           </div>
 
           <div className="p-5 rounded-2xl bg-slate-950 border border-amber-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4">

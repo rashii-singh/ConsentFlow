@@ -1,4 +1,4 @@
-import { SupportedLanguage } from './prompts';
+import { SUPPORTED_LANGUAGES, SupportedLanguage } from './prompts';
 
 export interface SimplifiedNoticeResult {
   simplified: string;

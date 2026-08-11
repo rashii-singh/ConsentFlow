@@ -23,8 +23,8 @@ export default function BusinessView({ businesses, notices, records }: BusinessV
   const bizNotices = notices.filter((n) => n.businessId === selectedBiz || n.business?.id === selectedBiz);
   const bizRecords = records.filter((r) => r.businessId === selectedBiz || r.business?.id === selectedBiz);
 
-  const activeConsentCount = bizRecords.filter((r) => r.status === 'GRANTED').length;
-  const revokedConsentCount = bizRecords.filter((r) => r.status === 'REVOKED').length;
+  const activeConsentCount = bizRecords.filter((r) => r.granted || r.status === 'GRANTED').length;
+  const revokedConsentCount = bizRecords.filter((r) => (!r.granted && r.granted !== undefined) || r.status === 'REVOKED').length;
 
   return (
     <div className="space-y-8 animate-fadeIn">
@@ -163,11 +163,8 @@ export default function BusinessView({ businesses, notices, records }: BusinessV
                 <div>
                   <div className="flex items-center space-x-2">
                     <h3 className="text-sm font-bold text-slate-100">{notice.title}</h3>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-cyan-300">
-                      v{notice.version}
-                    </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">{notice.description}</p>
+                  <p className="text-xs text-slate-400 mt-1">{notice.description || notice.rawLegalText}</p>
                 </div>
 
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">

@@ -53,7 +53,15 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { businessId, type = GrievanceType.OTHER, subject, description } = body;
+    const { businessId, type, subject, description } = body;
+
+    const validTypes = Object.values(GrievanceType);
+    if (!type || !validTypes.includes(type as GrievanceType)) {
+      return NextResponse.json(
+        { success: false, error: 'Valid grievance type (ACCESS, ERASURE, CORRECTION, NOMINATION) is required' },
+        { status: 400 }
+      );
+    }
 
     if (!subject || !description) {
       return NextResponse.json(
@@ -77,9 +85,8 @@ export async function POST(req: Request) {
       data: {
         userId: session.user.id,
         businessId: targetBusinessId,
-        type,
-        subject,
-        description,
+        type: type as GrievanceType,
+        description: subject ? `${subject}: ${description}` : description,
         status: GrievanceStatus.OPEN,
         slaDeadline,
         createdAt,
@@ -102,7 +109,7 @@ export async function PATCH(req: Request) {
     }
 
     const body = await req.json();
-    const { ticketId, status, resolutionNotes } = body;
+    const { ticketId, status, resolutionNotes, resolution } = body;
 
     if (!ticketId || !status) {
       return NextResponse.json(
@@ -111,13 +118,13 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const isResolved = status === GrievanceStatus.RESOLVED || status === GrievanceStatus.REJECTED;
+    const isResolved = status === GrievanceStatus.RESOLVED || status === GrievanceStatus.ESCALATED;
 
     const updated = await prisma.grievanceTicket.update({
       where: { id: ticketId },
       data: {
         status: status as GrievanceStatus,
-        resolutionNotes: resolutionNotes || null,
+        resolution: resolutionNotes || resolution || null,
         resolvedAt: isResolved ? new Date() : null,
       },
     });

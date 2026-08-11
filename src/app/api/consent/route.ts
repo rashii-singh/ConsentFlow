@@ -23,23 +23,26 @@ export async function POST(request: Request) {
 
     try {
       if (recordId) {
+        const payloadData = {
+          ip: '127.0.0.1',
+          reason: `User requested ${action} via ConsentFlow Portal`,
+          section: 'DPDP Section 6(4)',
+          dataTypesShared: action === 'REVOKE' ? [] : (dataTypesShared || ['Health History']),
+        };
+
         const updated = await prisma.consentRecord.update({
           where: { id: recordId },
           data: {
-            status: newStatus,
+            granted: action !== 'REVOKE',
             revokedAt: action === 'REVOKE' ? timestamp : null,
-            dataTypesShared: action === 'REVOKE' ? [] : (dataTypesShared || []),
-            hash: currentHash,
+            choices: JSON.parse(JSON.stringify(action === 'REVOKE' ? [] : (dataTypesShared || []))),
             auditLogs: {
               create: {
-                action: action,
+                action: action === 'REVOKE' ? 'REVOKE' : 'GRANT',
+                actorId: userId || 'usr_consumer',
                 timestamp: timestamp,
                 currentHash: currentHash,
-                metadata: JSON.stringify({
-                  ip: '127.0.0.1',
-                  reason: `User requested ${action} via ConsentFlow Portal`,
-                  section: 'DPDP Section 6(4)',
-                }),
+                payload: JSON.parse(JSON.stringify(payloadData)),
               },
             },
           },

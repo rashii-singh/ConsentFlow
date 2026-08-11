@@ -74,7 +74,7 @@ export default function BusinessGrievanceTable({ initialGrievances }: BusinessGr
                     <span className="text-[10px] font-mono text-slate-400 uppercase">
                       Ticket ID: {g.id} | Data Principal: {g.user?.email || g.userId}
                     </span>
-                    <h3 className="text-sm font-bold text-white">{g.subject}</h3>
+                    <h3 className="text-sm font-bold text-white">{g.type}</h3>
                   </div>
 
                   <div className="flex items-center space-x-2">
@@ -94,7 +94,7 @@ export default function BusinessGrievanceTable({ initialGrievances }: BusinessGr
                       onClick={() => {
                         setEditingId(isEditing ? null : g.id);
                         setStatus(g.status);
-                        setNotes(g.resolutionNotes || '');
+                        setNotes(g.resolution || g.resolutionNotes || '');
                       }}
                       className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors"
                     >
@@ -107,12 +107,12 @@ export default function BusinessGrievanceTable({ initialGrievances }: BusinessGr
                   {g.description}
                 </p>
 
-                {g.resolutionNotes && !isEditing && (
+                {(g.resolution || g.resolutionNotes) && !isEditing && (
                   <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 space-y-1 font-mono">
                     <div className="font-bold text-emerald-400 text-[10px]">
                       Recorded Resolution Notes:
                     </div>
-                    <p>"{g.resolutionNotes}"</p>
+                    <p>"{g.resolution || g.resolutionNotes}"</p>
                   </div>
                 )}
 

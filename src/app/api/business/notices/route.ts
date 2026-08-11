@@ -70,8 +70,8 @@ export async function POST(req: Request) {
         businessId: business.id,
         title,
         rawLegalText,
-        simplifiedVersions,
-        purposes,
+        simplifiedVersions: JSON.parse(JSON.stringify(simplifiedVersions)),
+        purposes: JSON.parse(JSON.stringify(purposes)),
         isActive: true,
       },
     });

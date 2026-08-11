@@ -12,15 +12,15 @@ export default async function BusinessDashboard() {
     where: { userId: session?.user?.id || '' },
     include: {
       notices: true,
-      consents: { orderBy: { createdAt: 'desc' }, take: 10, include: { notice: true } },
-      webhooks: { orderBy: { createdAt: 'desc' }, take: 50 },
+      consents: { orderBy: { createdAt: 'desc' }, take: 10, include: { notice: true, auditLogs: { orderBy: { timestamp: 'desc' } } } },
+      webhookLogs: { orderBy: { createdAt: 'desc' }, take: 50 },
       grievances: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } },
     },
   }) || await prisma.business.findFirst({
     include: {
       notices: true,
-      consents: { orderBy: { createdAt: 'desc' }, take: 10, include: { notice: true } },
-      webhooks: { orderBy: { createdAt: 'desc' }, take: 50 },
+      consents: { orderBy: { createdAt: 'desc' }, take: 10, include: { notice: true, auditLogs: { orderBy: { timestamp: 'desc' } } } },
+      webhookLogs: { orderBy: { createdAt: 'desc' }, take: 50 },
       grievances: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } },
     },
   });
@@ -30,8 +30,8 @@ export default async function BusinessDashboard() {
   const activeNotices = business?.notices?.filter((n) => n.isActive).length || 0;
   const openGrievances = business?.grievances?.length || 0;
 
-  const totalWebhooks = business?.webhooks?.length || 0;
-  const deliveredWebhooks = business?.webhooks?.filter((w) => w.status === 'DELIVERED').length || 0;
+  const totalWebhooks = business?.webhookLogs?.length || 0;
+  const deliveredWebhooks = business?.webhookLogs?.filter((w) => w.status === 'DELIVERED').length || 0;
   const webhookSuccessRate = totalWebhooks > 0 ? Math.round((deliveredWebhooks / totalWebhooks) * 100) : 100;
 
   return (
