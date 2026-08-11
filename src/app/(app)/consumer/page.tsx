@@ -1,38 +1,124 @@
 import { auth } from '@/lib/auth/auth';
+import { prisma } from '@/lib/prisma';
 import RoleSwitcher from '@/components/RoleSwitcher';
-import { UserCheck, ShieldCheck, Lock } from 'lucide-react';
+import Link from 'next/link';
+import { ShieldCheck, UserCheck, CheckCircle2, XCircle, ArrowRight, Hash, Clock, FileText, Lock, AlertCircle } from 'lucide-react';
+import ConsumerConsentList from '@/components/consumer/ConsumerConsentList';
 
-export default async function ConsumerPage() {
+export default async function ConsumerDashboard() {
   const session = await auth();
+  const userId = session?.user?.id;
+
+  // Query User's consent records
+  const consentRecords = userId
+    ? await prisma.consentRecord.findMany({
+        where: { userId },
+        include: {
+          notice: true,
+          business: true,
+          auditLogs: { orderBy: { timestamp: 'desc' }, take: 2 },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+    : [];
+
+  // Query available active consent notices
+  const availableNotices = await prisma.consentNotice.findMany({
+    where: { isActive: true },
+    include: { business: true },
+    take: 10,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const activeConsents = consentRecords.filter((r) => r.granted);
+  const revokedConsents = consentRecords.filter((r) => !r.granted);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-8 flex flex-col items-center justify-center relative">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 space-y-8 selection:bg-emerald-500 selection:text-slate-950">
       <RoleSwitcher />
 
-      <div className="max-w-xl w-full p-8 rounded-3xl bg-slate-900 border border-emerald-500/30 space-y-6 shadow-2xl">
-        <div className="flex items-center space-x-3">
-          <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-            <UserCheck className="w-6 h-6" />
+      {/* Header Banner */}
+      <div className="max-w-7xl mx-auto p-6 sm:p-8 rounded-3xl bg-slate-900 border border-emerald-500/30 shadow-2xl relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+          <div className="space-y-2">
+            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Data Principal Citizen Portal — DPDP Act 2023</span>
+            </div>
+            <h1 className="text-3xl font-black text-white tracking-tight">
+              Welcome back, {session?.user?.name || 'Ananya Sharma'}
+            </h1>
+            <p className="text-xs text-slate-400 max-w-2xl">
+              Under Section 6(4) of the DPDP Act 2023, you have the statutory right to view, manage, and withdraw your consent at any time with 1-tap immediate effect.
+            </p>
           </div>
-          <div>
-            <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-              Protected Route: /consumer
-            </span>
-            <h1 className="text-2xl font-bold text-white mt-1">Consumer Portal (Data Principal)</h1>
+
+          <div className="flex items-center space-x-4">
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center">
+              <div className="text-2xl font-black text-emerald-400">{activeConsents.length}</div>
+              <div className="text-[10px] text-slate-400 uppercase font-mono mt-0.5">Active Consents</div>
+            </div>
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center">
+              <div className="text-2xl font-black text-rose-400">{revokedConsents.length}</div>
+              <div className="text-[10px] text-slate-400 uppercase font-mono mt-0.5">Revoked Consents</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto space-y-8">
+        
+        {/* Interactive Active & Revoked Consents List */}
+        <ConsumerConsentList initialRecords={consentRecords} />
+
+        {/* Available Consent Notices Section */}
+        <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold text-white flex items-center space-x-2">
+                <FileText className="w-5 h-5 text-emerald-400" />
+                <span>Available Fiduciary Consent Notices</span>
+              </h2>
+              <p className="text-xs text-slate-400">
+                Select a consent notice below to inspect AI plain-language summaries and configure granular choices.
+              </p>
+            </div>
+            <span className="text-xs font-mono text-emerald-400">{availableNotices.length} Active Notices</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {availableNotices.map((notice) => (
+              <div
+                key={notice.id}
+                className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-4 group"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 truncate max-w-[180px]">
+                      {notice.business.name}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">v{notice.version || '1.0'}</span>
+                  </div>
+                  <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors line-clamp-2">
+                    {notice.title}
+                  </h3>
+                  <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
+                    {notice.rawLegalText}
+                  </p>
+                </div>
+
+                <Link
+                  href={`/consumer/notices/${notice.id}`}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30 transition-all flex items-center justify-center space-x-1.5"
+                >
+                  <span>Review AI Notice & Grant</span>
+                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                </Link>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs font-mono">
-          <div className="text-slate-400">Authenticated Session User:</div>
-          <div className="text-slate-200">Name: {session?.user?.name}</div>
-          <div className="text-slate-200">Email: {session?.user?.email}</div>
-          <div className="text-emerald-400 font-bold">Role: {session?.user?.role}</div>
-        </div>
-
-        <div className="flex items-center space-x-2 text-xs text-slate-400">
-          <Lock className="w-4 h-4 text-emerald-400" />
-          <span>Route protected by Auth.js middleware. Only CONSUMER role permitted.</span>
-        </div>
       </div>
     </div>
   );
