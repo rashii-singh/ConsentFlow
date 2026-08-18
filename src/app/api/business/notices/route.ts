@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/auth';
 import { prisma } from '@/lib/prisma';
+import { UserRole } from '@prisma/client';
 import { simplifyNoticeText } from '@/lib/ai/groq';
 
 export async function GET() {
@@ -10,14 +11,22 @@ export async function GET() {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Only BUSINESS users can access their own notices
+    if (session.user.role !== UserRole.BUSINESS) {
+      return NextResponse.json({ success: false, error: 'Forbidden: Only business users can access this resource' }, { status: 403 });
+    }
+
     const business = await prisma.business.findFirst({
       where: { userId: session.user.id },
       include: { notices: true },
     });
 
-    const notices = business?.notices || await prisma.consentNotice.findMany({ take: 10 });
+    if (!business) {
+      // No business profile yet — return empty list, not someone else's notices
+      return NextResponse.json({ success: true, data: [] });
+    }
 
-    return NextResponse.json({ success: true, data: notices });
+    return NextResponse.json({ success: true, data: business.notices });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
@@ -30,6 +39,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Only BUSINESS users can create notices
+    if (session.user.role !== UserRole.BUSINESS) {
+      return NextResponse.json({ success: false, error: 'Forbidden: Only business users can create consent notices' }, { status: 403 });
+    }
+
     const body = await req.json();
     const { title, rawLegalText, purposes } = body;
 
@@ -40,13 +54,14 @@ export async function POST(req: Request) {
       );
     }
 
-    // Find or assign business for current user
+    // Find business strictly owned by this user
     let business = await prisma.business.findFirst({
       where: { userId: session.user.id },
     });
 
     if (!business) {
-      business = await prisma.business.findFirst() || await prisma.business.create({
+      // Auto-create a business profile for this BUSINESS user only
+      business = await prisma.business.create({
         data: {
           name: 'Demo Data Fiduciary',
           userId: session.user.id,

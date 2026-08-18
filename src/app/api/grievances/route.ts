@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/auth';
 import { prisma } from '@/lib/prisma';
-import { GrievanceStatus, GrievanceType } from '@prisma/client';
+import { GrievanceStatus, GrievanceType, UserRole } from '@prisma/client';
 
 export async function GET(req: Request) {
   try {
@@ -10,33 +10,35 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { searchParams } = new URL(req.url);
     const role = session.user.role;
-
     let grievances = [];
 
-    if (role === 'CONSUMER') {
+    if (role === UserRole.CONSUMER) {
       grievances = await prisma.grievanceTicket.findMany({
         where: { userId: session.user.id },
         include: { business: true },
         orderBy: { createdAt: 'desc' },
       });
-    } else if (role === 'BUSINESS') {
+    } else if (role === UserRole.BUSINESS) {
       const business = await prisma.business.findFirst({
         where: { userId: session.user.id },
       });
-      const businessId = business?.id;
+      if (!business) {
+        return NextResponse.json({ success: true, data: [] });
+      }
       grievances = await prisma.grievanceTicket.findMany({
-        where: businessId ? { businessId } : {},
+        where: { businessId: business.id },
         include: { user: true },
         orderBy: { createdAt: 'desc' },
       });
-    } else {
+    } else if (role === UserRole.REGULATOR) {
       // REGULATOR sees all grievances across system
       grievances = await prisma.grievanceTicket.findMany({
         include: { user: true, business: true },
         orderBy: { createdAt: 'desc' },
       });
+    } else {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: grievances });
@@ -50,6 +52,11 @@ export async function POST(req: Request) {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Only CONSUMERs can file grievances
+    if (session.user.role !== UserRole.CONSUMER) {
+      return NextResponse.json({ success: false, error: 'Forbidden: Only consumers can file grievances' }, { status: 403 });
     }
 
     const body = await req.json();
@@ -70,11 +77,23 @@ export async function POST(req: Request) {
       );
     }
 
-    // Default target business if none specified
-    let targetBusinessId = businessId;
+    // Target business must be explicitly provided or resolved from DB — no hardcoded fallback IDs
+    let targetBusinessId = businessId as string | undefined;
     if (!targetBusinessId) {
       const firstBiz = await prisma.business.findFirst();
-      targetBusinessId = firstBiz?.id || 'biz_01';
+      if (!firstBiz) {
+        return NextResponse.json(
+          { success: false, error: 'No registered businesses found. Cannot file a grievance.' },
+          { status: 400 }
+        );
+      }
+      targetBusinessId = firstBiz.id;
+    }
+
+    // Verify the target business exists
+    const targetBusiness = await prisma.business.findUnique({ where: { id: targetBusinessId } });
+    if (!targetBusiness) {
+      return NextResponse.json({ success: false, error: 'Target business not found' }, { status: 404 });
     }
 
     // Auto-calculate statutory 30-day DPDP SLA deadline
@@ -108,6 +127,13 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const role = session.user.role;
+
+    // Only BUSINESS and REGULATOR can update grievance status
+    if (role !== UserRole.BUSINESS && role !== UserRole.REGULATOR) {
+      return NextResponse.json({ success: false, error: 'Forbidden: Only businesses and regulators can update grievances' }, { status: 403 });
+    }
+
     const body = await req.json();
     const { ticketId, status, resolutionNotes, resolution } = body;
 
@@ -116,6 +142,29 @@ export async function PATCH(req: Request) {
         { success: false, error: 'Ticket ID and status are required' },
         { status: 400 }
       );
+    }
+
+    // Validate status enum
+    const validStatuses = Object.values(GrievanceStatus);
+    if (!validStatuses.includes(status as GrievanceStatus)) {
+      return NextResponse.json(
+        { success: false, error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    // Fetch the ticket first to enforce ownership for BUSINESS role
+    const ticket = await prisma.grievanceTicket.findUnique({ where: { id: ticketId } });
+    if (!ticket) {
+      return NextResponse.json({ success: false, error: 'Grievance ticket not found' }, { status: 404 });
+    }
+
+    if (role === UserRole.BUSINESS) {
+      // Verify the ticket belongs to this business
+      const business = await prisma.business.findFirst({ where: { userId: session.user.id } });
+      if (!business || ticket.businessId !== business.id) {
+        return NextResponse.json({ success: false, error: 'Forbidden: This ticket does not belong to your business' }, { status: 403 });
+      }
     }
 
     const isResolved = status === GrievanceStatus.RESOLVED || status === GrievanceStatus.ESCALATED;
