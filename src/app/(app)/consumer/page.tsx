@@ -2,21 +2,21 @@ import { auth } from '@/lib/auth/auth';
 import { prisma } from '@/lib/prisma';
 import RoleSwitcher from '@/components/RoleSwitcher';
 import Link from 'next/link';
-import { ShieldCheck, UserCheck, CheckCircle2, XCircle, ArrowRight, Hash, Clock, FileText, Lock, AlertCircle } from 'lucide-react';
+import { ShieldCheck, UserCheck, AlertTriangle, ArrowRight, FileText, CheckCircle2 } from 'lucide-react';
 import ConsumerConsentList from '@/components/consumer/ConsumerConsentList';
 
 export default async function ConsumerDashboard() {
   const session = await auth();
   const userId = session?.user?.id;
 
-  // Query User's consent records
+  // Query User's consent records with full audit trail
   const consentRecords = userId
     ? await prisma.consentRecord.findMany({
         where: { userId },
         include: {
           notice: true,
           business: true,
-          auditLogs: { orderBy: { timestamp: 'desc' }, take: 2 },
+          auditLogs: { orderBy: { timestamp: 'desc' } },
         },
         orderBy: { createdAt: 'desc' },
       })
@@ -53,15 +53,23 @@ export default async function ConsumerDashboard() {
             </p>
           </div>
 
-          <div className="flex items-center space-x-4">
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center min-w-[100px]">
               <div className="text-2xl font-black text-emerald-400">{activeConsents.length}</div>
               <div className="text-[10px] text-slate-400 uppercase font-mono mt-0.5">Active Consents</div>
             </div>
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center">
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center min-w-[100px]">
               <div className="text-2xl font-black text-rose-400">{revokedConsents.length}</div>
-              <div className="text-[10px] text-slate-400 uppercase font-mono mt-0.5">Revoked Consents</div>
+              <div className="text-[10px] text-slate-400 uppercase font-mono mt-0.5">Revoked</div>
             </div>
+
+            <Link
+              href="/consumer/grievances"
+              className="py-3.5 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all flex items-center space-x-2 shadow-lg shadow-amber-500/20 active:scale-95 self-stretch sm:self-auto justify-center"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              <span>Grievance Desk</span>
+            </Link>
           </div>
         </div>
       </div>
@@ -86,36 +94,42 @@ export default async function ConsumerDashboard() {
             <span className="text-xs font-mono text-emerald-400">{availableNotices.length} Active Notices</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {availableNotices.map((notice) => (
-              <div
-                key={notice.id}
-                className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-4 group"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 truncate max-w-[180px]">
-                      {notice.business.name}
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors line-clamp-2">
-                    {notice.title}
-                  </h3>
-                  <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
-                    {notice.rawLegalText}
-                  </p>
-                </div>
-
-                <Link
-                  href={`/consumer/notices/${notice.id}`}
-                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30 transition-all flex items-center justify-center space-x-1.5"
+          {availableNotices.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-slate-950 border border-slate-800 text-center text-xs text-slate-400">
+              No active fiduciary consent notices found at this time.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {availableNotices.map((notice) => (
+                <div
+                  key={notice.id}
+                  className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-4 group"
                 >
-                  <span>Review AI Notice & Grant</span>
-                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                </Link>
-              </div>
-            ))}
-          </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 truncate max-w-[180px]">
+                        {notice.business.name}
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors line-clamp-2">
+                      {notice.title}
+                    </h3>
+                    <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
+                      {notice.rawLegalText}
+                    </p>
+                  </div>
+
+                  <Link
+                    href={`/consumer/notices/${notice.id}`}
+                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30 transition-all flex items-center justify-center space-x-1.5"
+                  >
+                    <span>Review AI Notice & Grant</span>
+                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
       </div>

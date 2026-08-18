@@ -1,11 +1,22 @@
 import { NextResponse } from 'next/server';
 import { simplifyNoticeText } from '@/lib/ai/groq';
+import { simplifyNoticeSchema } from '@/lib/validators';
 
-// Simple in-memory rate limiter (10 requests per minute per IP)
+// In-memory rate limiter (10 requests per minute per IP) with automatic pruning
 const rateLimitMap = new Map<string, { count: number; expiresAt: number }>();
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
+
+  // Prune expired entries periodically to prevent memory leaks in long-running nodes
+  if (rateLimitMap.size > 1000) {
+    for (const [key, val] of rateLimitMap.entries()) {
+      if (val.expiresAt < now) {
+        rateLimitMap.delete(key);
+      }
+    }
+  }
+
   const entry = rateLimitMap.get(ip);
 
   if (!entry || entry.expiresAt < now) {
@@ -24,7 +35,7 @@ function checkRateLimit(ip: string): boolean {
 export async function POST(req: Request) {
   try {
     const ip =
-      req.headers.get('x-forwarded-for')?.split(',')[0] ||
+      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
       req.headers.get('x-real-ip') ||
       '127.0.0.1';
 
@@ -38,16 +49,21 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = await req.json();
-    const { text, lang = 'en' } = body;
+    const body = await req.json().catch(() => ({}));
+    const parseResult = simplifyNoticeSchema.safeParse(body);
 
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    if (!parseResult.success) {
       return NextResponse.json(
-        { success: false, error: 'Notice text is required for AI simplification' },
+        {
+          success: false,
+          error: 'Validation Error',
+          details: parseResult.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
 
+    const { text, lang } = parseResult.data;
     const result = await simplifyNoticeText(text, lang);
 
     return NextResponse.json({

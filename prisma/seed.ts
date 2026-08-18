@@ -11,8 +11,39 @@ import crypto from 'crypto';
 
 const prisma = new PrismaClient();
 
-function computeSha256(data: string): string {
-  return crypto.createHash('sha256').update(data).digest('hex');
+/**
+ * Deterministically stringifies an object by sorting its keys recursively.
+ */
+function canonicalStringify(obj: any): string {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(canonicalStringify).join(',') + ']';
+  }
+  const sortedKeys = Object.keys(obj).sort();
+  const sortedEntries = sortedKeys.map(
+    (key) => JSON.stringify(key) + ':' + canonicalStringify(obj[key])
+  );
+  return '{' + sortedEntries.join(',') + '}';
+}
+
+function sha256(input: string): string {
+  return crypto.createHash('sha256').update(input, 'utf8').digest('hex');
+}
+
+function hashAction(payload: any, previousHash: string | null = null) {
+  const canonicalPayload = canonicalStringify(payload);
+  const hashInput = (previousHash || '') + canonicalPayload;
+  const currentHash = sha256(hashInput);
+  return { currentHash, canonicalPayload };
+}
+
+function signWebhook(payload: any, secret: string): string {
+  const payloadString = typeof payload === 'string' ? payload : canonicalStringify(payload);
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(payloadString, 'utf8');
+  return `sha256=${hmac.digest('hex')}`;
 }
 
 async function main() {
@@ -63,12 +94,15 @@ async function main() {
   - Regulator: ${regulatorUser.email}`);
 
   // 2. Create 2 Businesses
+  const healthPlusApiKey = 'cf_live_hp_' + crypto.randomBytes(16).toString('hex');
+  const shopSmartApiKey = 'cf_live_ss_' + crypto.randomBytes(16).toString('hex');
+
   const healthPlus = await prisma.business.create({
     data: {
       name: 'HealthPlus Care',
       userId: businessUser.id,
       webhookUrl: 'https://webhook.site/demo-healthplus-dpdp-endpoint',
-      apiKey: 'cf_live_hp_' + crypto.randomBytes(16).toString('hex'),
+      apiKey: healthPlusApiKey,
       tier: BusinessTier.ENTERPRISE,
     },
   });
@@ -77,7 +111,7 @@ async function main() {
     data: {
       name: 'ShopSmart Retail',
       webhookUrl: 'https://webhook.site/demo-shopsmart-dpdp-endpoint',
-      apiKey: 'cf_live_ss_' + crypto.randomBytes(16).toString('hex'),
+      apiKey: shopSmartApiKey,
       tier: BusinessTier.GROWTH,
     },
   });
@@ -165,11 +199,11 @@ async function main() {
     userId: consumerUser.id,
     noticeId: notice1.id,
     businessId: healthPlus.id,
-    granted: true,
+    action: ConsentAction.GRANT,
     choices: { p_medical_diagnosis: true, p_prescription_sharing: true, p_health_analytics: false },
     timestamp: tenDaysAgo.toISOString(),
   };
-  const genesisHash1 = computeSha256(JSON.stringify(payload1));
+  const { currentHash: genesisHash1 } = hashAction(payload1, null);
 
   const record1 = await prisma.consentRecord.create({
     data: {
@@ -199,11 +233,11 @@ async function main() {
     userId: consumerUser.id,
     noticeId: notice2.id,
     businessId: shopSmart.id,
-    granted: true,
+    action: ConsentAction.GRANT,
     choices: { p_order_processing: true, p_personalized_offers: true, p_browsing_analytics: false },
     timestamp: fiveDaysAgo.toISOString(),
   };
-  const hash2 = computeSha256(genesisHash1 + JSON.stringify(payload2));
+  const { currentHash: hash2 } = hashAction(payload2, genesisHash1);
 
   const record2 = await prisma.consentRecord.create({
     data: {
@@ -233,21 +267,22 @@ async function main() {
     userId: consumerUser.id,
     noticeId: notice3.id,
     businessId: shopSmart.id,
-    granted: true,
+    action: ConsentAction.GRANT,
     choices: { p_kyc_validation: true, p_credit_check: true },
     timestamp: tenDaysAgo.toISOString(),
   };
-  const hash3a = computeSha256(hash2 + JSON.stringify(initialPayload3));
+  const { currentHash: hash3a } = hashAction(initialPayload3, hash2);
 
   const revokePayload3 = {
     userId: consumerUser.id,
+    recordId: 'rec_temp_3',
     noticeId: notice3.id,
     businessId: shopSmart.id,
-    granted: false,
-    choices: { p_kyc_validation: true, p_credit_check: false },
+    action: ConsentAction.REVOKE,
+    reason: 'User requested DPDP Section 6(4) Revocation',
     timestamp: twoDaysAgo.toISOString(),
   };
-  const hash3b = computeSha256(hash3a + JSON.stringify(revokePayload3));
+  const { currentHash: hash3b } = hashAction(revokePayload3, hash3a);
 
   const record3 = await prisma.consentRecord.create({
     data: {
@@ -255,7 +290,7 @@ async function main() {
       noticeId: notice3.id,
       businessId: shopSmart.id,
       granted: false,
-      choices: revokePayload3.choices,
+      choices: initialPayload3.choices,
       ipAddress: '103.21.124.5',
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X)',
       createdAt: tenDaysAgo,
@@ -290,11 +325,11 @@ async function main() {
     userId: businessUser.id,
     noticeId: notice1.id,
     businessId: healthPlus.id,
-    granted: true,
+    action: ConsentAction.GRANT,
     choices: { p_medical_diagnosis: true, p_prescription_sharing: false },
     timestamp: fiveDaysAgo.toISOString(),
   };
-  const hash4 = computeSha256(hash3b + JSON.stringify(payload4));
+  const { currentHash: hash4 } = hashAction(payload4, hash3b);
 
   const record4 = await prisma.consentRecord.create({
     data: {
@@ -322,13 +357,14 @@ async function main() {
   // Record 5: Business User -> ShopSmart (Notice 2) REVOKED
   const payload5 = {
     userId: businessUser.id,
+    recordId: 'rec_temp_5',
     noticeId: notice2.id,
     businessId: shopSmart.id,
-    granted: false,
-    choices: { p_order_processing: true, p_personalized_offers: false },
+    action: ConsentAction.REVOKE,
+    reason: 'User requested one-tap revocation',
     timestamp: now.toISOString(),
   };
-  const hash5 = computeSha256(hash4 + JSON.stringify(payload5));
+  const { currentHash: hash5 } = hashAction(payload5, hash4);
 
   const record5 = await prisma.consentRecord.create({
     data: {
@@ -336,7 +372,7 @@ async function main() {
       noticeId: notice2.id,
       businessId: shopSmart.id,
       granted: false,
-      choices: payload5.choices,
+      choices: { p_order_processing: true, p_personalized_offers: false },
       ipAddress: '122.160.42.18',
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
       createdAt: twoDaysAgo,
@@ -394,12 +430,20 @@ async function main() {
   - Grievance 2 (${grievance2.id}): ${grievance2.status} (${grievance2.type})`);
 
   // 6. Create Realistic V2 Webhook Delivery Logs
+  const webhook1Payload = {
+    eventId: `evt_${Date.now()}_01`,
+    eventType: 'consent.granted',
+    businessId: healthPlus.id,
+    timestamp: tenDaysAgo.toISOString(),
+    data: { recordId: record1.id, userId: consumerUser.id, noticeId: notice1.id, choices: record1.choices },
+  };
+
   const webhook1 = await prisma.webhookDelivery.create({
     data: {
       businessId: healthPlus.id,
       eventType: 'consent.granted',
-      payload: { recordId: record1.id, userId: consumerUser.id, noticeId: notice1.id, choices: record1.choices },
-      signature: 'sha256=' + computeSha256('healthplus_secret_' + record1.id),
+      payload: webhook1Payload,
+      signature: signWebhook(webhook1Payload, healthPlusApiKey),
       status: WebhookStatus.DELIVERED,
       responseStatus: 200,
       responseBody: '{"success":true,"message":"Webhook received and processed"}',
@@ -409,12 +453,20 @@ async function main() {
     },
   });
 
+  const webhook2Payload = {
+    eventId: `evt_${Date.now()}_02`,
+    eventType: 'consent.revoked',
+    businessId: shopSmart.id,
+    timestamp: twoDaysAgo.toISOString(),
+    data: { recordId: record3.id, userId: consumerUser.id, noticeId: notice3.id },
+  };
+
   const webhook2 = await prisma.webhookDelivery.create({
     data: {
       businessId: shopSmart.id,
       eventType: 'consent.revoked',
-      payload: { recordId: record3.id, userId: consumerUser.id, noticeId: notice3.id },
-      signature: 'sha256=' + computeSha256('shopsmart_secret_' + record3.id),
+      payload: webhook2Payload,
+      signature: signWebhook(webhook2Payload, shopSmartApiKey),
       status: WebhookStatus.RETRYING,
       responseStatus: 503,
       responseBody: 'Service Unavailable - Endpoint rate limited',

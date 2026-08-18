@@ -1,13 +1,21 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/auth';
 import { prisma } from '@/lib/prisma';
-import { GrievanceStatus, GrievanceType, UserRole } from '@prisma/client';
+import { GrievanceStatus, UserRole } from '@prisma/client';
+import {
+  createGrievanceSchema,
+  updateGrievanceSchema,
+  isValidGrievanceTransition,
+} from '@/lib/validators';
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized: Authentication required' },
+        { status: 401 }
+      );
     }
 
     const role = session.user.role;
@@ -32,18 +40,25 @@ export async function GET(req: Request) {
         orderBy: { createdAt: 'desc' },
       });
     } else if (role === UserRole.REGULATOR) {
-      // REGULATOR sees all grievances across system
+      // REGULATOR sees all grievances across the system
       grievances = await prisma.grievanceTicket.findMany({
         include: { user: true, business: true },
         orderBy: { createdAt: 'desc' },
       });
     } else {
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Invalid role' },
+        { status: 403 }
+      );
     }
 
-    return NextResponse.json({ success: true, data: grievances });
+    return NextResponse.json({ success: true, count: grievances.length, data: grievances });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    console.error('API /api/grievances GET Error:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }
 
@@ -51,49 +66,46 @@ export async function POST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized: Authentication required' },
+        { status: 401 }
+      );
     }
 
-    // Only CONSUMERs can file grievances
+    // Only Data Principals (CONSUMER) can file grievances under Section 13
     if (session.user.role !== UserRole.CONSUMER) {
-      return NextResponse.json({ success: false, error: 'Forbidden: Only consumers can file grievances' }, { status: 403 });
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only consumers can file grievance tickets' },
+        { status: 403 }
+      );
     }
 
-    const body = await req.json();
-    const { businessId, type, subject, description } = body;
+    const body = await req.json().catch(() => ({}));
+    const parseResult = createGrievanceSchema.safeParse(body);
 
-    const validTypes = Object.values(GrievanceType);
-    if (!type || !validTypes.includes(type as GrievanceType)) {
+    if (!parseResult.success) {
       return NextResponse.json(
-        { success: false, error: 'Valid grievance type (ACCESS, ERASURE, CORRECTION, NOMINATION) is required' },
+        {
+          success: false,
+          error: 'Validation Error',
+          details: parseResult.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
 
-    if (!subject || !description) {
-      return NextResponse.json(
-        { success: false, error: 'Subject and description are required' },
-        { status: 400 }
-      );
-    }
-
-    // Target business must be explicitly provided or resolved from DB — no hardcoded fallback IDs
-    let targetBusinessId = businessId as string | undefined;
-    if (!targetBusinessId) {
-      const firstBiz = await prisma.business.findFirst();
-      if (!firstBiz) {
-        return NextResponse.json(
-          { success: false, error: 'No registered businesses found. Cannot file a grievance.' },
-          { status: 400 }
-        );
-      }
-      targetBusinessId = firstBiz.id;
-    }
+    const { businessId, type, subject, description } = parseResult.data;
 
     // Verify the target business exists
-    const targetBusiness = await prisma.business.findUnique({ where: { id: targetBusinessId } });
+    const targetBusiness = await prisma.business.findUnique({
+      where: { id: businessId },
+    });
+
     if (!targetBusiness) {
-      return NextResponse.json({ success: false, error: 'Target business not found' }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: 'Target Data Fiduciary business not found' },
+        { status: 404 }
+      );
     }
 
     // Auto-calculate statutory 30-day DPDP SLA deadline
@@ -103,8 +115,8 @@ export async function POST(req: Request) {
     const ticket = await prisma.grievanceTicket.create({
       data: {
         userId: session.user.id,
-        businessId: targetBusinessId,
-        type: type as GrievanceType,
+        businessId: targetBusiness.id,
+        type,
         description: subject ? `${subject}: ${description}` : description,
         status: GrievanceStatus.OPEN,
         slaDeadline,
@@ -113,10 +125,13 @@ export async function POST(req: Request) {
       include: { business: true },
     });
 
-    return NextResponse.json({ success: true, data: ticket });
+    return NextResponse.json({ success: true, data: ticket }, { status: 201 });
   } catch (error: any) {
     console.error('API /api/grievances POST Error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }
 
@@ -124,63 +139,99 @@ export async function PATCH(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized: Authentication required' },
+        { status: 401 }
+      );
     }
 
     const role = session.user.role;
 
     // Only BUSINESS and REGULATOR can update grievance status
     if (role !== UserRole.BUSINESS && role !== UserRole.REGULATOR) {
-      return NextResponse.json({ success: false, error: 'Forbidden: Only businesses and regulators can update grievances' }, { status: 403 });
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only businesses and regulators can update grievance tickets' },
+        { status: 403 }
+      );
     }
 
-    const body = await req.json();
-    const { ticketId, status, resolutionNotes, resolution } = body;
+    const body = await req.json().catch(() => ({}));
+    const parseResult = updateGrievanceSchema.safeParse(body);
 
-    if (!ticketId || !status) {
+    if (!parseResult.success) {
       return NextResponse.json(
-        { success: false, error: 'Ticket ID and status are required' },
+        {
+          success: false,
+          error: 'Validation Error',
+          details: parseResult.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
 
-    // Validate status enum
-    const validStatuses = Object.values(GrievanceStatus);
-    if (!validStatuses.includes(status as GrievanceStatus)) {
-      return NextResponse.json(
-        { success: false, error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-        { status: 400 }
-      );
-    }
+    const { ticketId, status, resolutionNotes, resolution } = parseResult.data;
 
-    // Fetch the ticket first to enforce ownership for BUSINESS role
-    const ticket = await prisma.grievanceTicket.findUnique({ where: { id: ticketId } });
+    // Fetch the ticket to enforce ownership and transition rules
+    const ticket = await prisma.grievanceTicket.findUnique({
+      where: { id: ticketId },
+    });
+
     if (!ticket) {
-      return NextResponse.json({ success: false, error: 'Grievance ticket not found' }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: 'Grievance ticket not found' },
+        { status: 404 }
+      );
     }
 
     if (role === UserRole.BUSINESS) {
-      // Verify the ticket belongs to this business
-      const business = await prisma.business.findFirst({ where: { userId: session.user.id } });
+      // Verify the ticket belongs to the business registered by this user
+      const business = await prisma.business.findFirst({
+        where: { userId: session.user.id },
+      });
       if (!business || ticket.businessId !== business.id) {
-        return NextResponse.json({ success: false, error: 'Forbidden: This ticket does not belong to your business' }, { status: 403 });
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: This ticket does not belong to your business organization' },
+          { status: 403 }
+        );
       }
     }
 
-    const isResolved = status === GrievanceStatus.RESOLVED || status === GrievanceStatus.ESCALATED;
+    // Validate state transition
+    const transitionCheck = isValidGrievanceTransition(ticket.status, status, role);
+    if (!transitionCheck.valid) {
+      return NextResponse.json(
+        { success: false, error: transitionCheck.error },
+        { status: 400 }
+      );
+    }
+
+    const resolutionText = resolutionNotes || resolution || ticket.resolution;
+
+    // If resolving, require resolution notes
+    if (status === GrievanceStatus.RESOLVED && !resolutionText) {
+      return NextResponse.json(
+        { success: false, error: 'Resolution explanation is required when resolving a grievance ticket' },
+        { status: 400 }
+      );
+    }
+
+    const isResolved = status === GrievanceStatus.RESOLVED;
 
     const updated = await prisma.grievanceTicket.update({
       where: { id: ticketId },
       data: {
-        status: status as GrievanceStatus,
-        resolution: resolutionNotes || resolution || null,
-        resolvedAt: isResolved ? new Date() : null,
+        status,
+        resolution: resolutionText || null,
+        resolvedAt: isResolved ? (ticket.resolvedAt || new Date()) : null,
       },
     });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: any) {
     console.error('API /api/grievances PATCH Error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }

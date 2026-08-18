@@ -3,32 +3,47 @@ import { auth } from '@/lib/auth/auth';
 import { prisma } from '@/lib/prisma';
 import { UserRole } from '@prisma/client';
 import { simplifyNoticeText } from '@/lib/ai/groq';
+import { createNoticeSchema } from '@/lib/validators';
 
 export async function GET() {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized: Authentication required' },
+        { status: 401 }
+      );
     }
 
     // Only BUSINESS users can access their own notices
     if (session.user.role !== UserRole.BUSINESS) {
-      return NextResponse.json({ success: false, error: 'Forbidden: Only business users can access this resource' }, { status: 403 });
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only business users can access this resource' },
+        { status: 403 }
+      );
     }
 
     const business = await prisma.business.findFirst({
       where: { userId: session.user.id },
-      include: { notices: true },
+      include: { notices: { orderBy: { createdAt: 'desc' } } },
     });
 
     if (!business) {
       // No business profile yet — return empty list, not someone else's notices
-      return NextResponse.json({ success: true, data: [] });
+      return NextResponse.json({ success: true, count: 0, data: [] });
     }
 
-    return NextResponse.json({ success: true, data: business.notices });
+    return NextResponse.json({
+      success: true,
+      count: business.notices.length,
+      data: business.notices,
+    });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    console.error('API /api/business/notices GET Error:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }
 
@@ -36,23 +51,35 @@ export async function POST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized: Authentication required' },
+        { status: 401 }
+      );
     }
 
     // Only BUSINESS users can create notices
     if (session.user.role !== UserRole.BUSINESS) {
-      return NextResponse.json({ success: false, error: 'Forbidden: Only business users can create consent notices' }, { status: 403 });
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only business users can create consent notices' },
+        { status: 403 }
+      );
     }
 
-    const body = await req.json();
-    const { title, rawLegalText, purposes } = body;
+    const body = await req.json().catch(() => ({}));
+    const parseResult = createNoticeSchema.safeParse(body);
 
-    if (!title || !rawLegalText || !purposes || !Array.isArray(purposes)) {
+    if (!parseResult.success) {
       return NextResponse.json(
-        { success: false, error: 'Title, raw legal text, and purposes array are required' },
+        {
+          success: false,
+          error: 'Validation Error',
+          details: parseResult.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
+
+    const { title, rawLegalText, purposes } = parseResult.data;
 
     // Find business strictly owned by this user
     let business = await prisma.business.findFirst({
@@ -63,7 +90,7 @@ export async function POST(req: Request) {
       // Auto-create a business profile for this BUSINESS user only
       business = await prisma.business.create({
         data: {
-          name: 'Demo Data Fiduciary',
+          name: session.user.name ? `${session.user.name}'s Organization` : 'Demo Data Fiduciary',
           userId: session.user.id,
           webhookUrl: 'https://webhook.site/demo-endpoint',
           apiKey: 'cf_live_demo_' + Date.now(),
@@ -91,9 +118,12 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, data: notice });
+    return NextResponse.json({ success: true, data: notice }, { status: 201 });
   } catch (error: any) {
     console.error('API /api/business/notices POST Error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }

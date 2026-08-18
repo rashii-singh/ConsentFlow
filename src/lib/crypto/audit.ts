@@ -21,7 +21,7 @@ export interface VerificationResult {
 /**
  * Generates the next hash in the cryptographic audit chain.
  * Genesis records use previousHash = null or "".
- * Formula: SHA256(previousHash + canonicalPayload)
+ * Formula: SHA256((previousHash || '') + canonicalPayload)
  */
 export function hashAction(
   payload: any,
@@ -38,12 +38,15 @@ export function hashAction(
 }
 
 /**
- * Verifies a sequence of audit log entries for chain integrity.
- * 1. Checks previousHash linkage to preceding log's currentHash.
- * 2. Recomputes currentHash = SHA256(previousHash + canonicalPayload).
+ * Verifies a sequence of audit log entries for cryptographic chain integrity.
+ * 1. Checks previousHash linkage to preceding log's currentHash (for index > 0).
+ * 2. Recomputes currentHash = SHA256((previousHash || '') + canonicalPayload) for every entry.
  * 3. Identifies broken index on any tampering or link mismatch.
  */
-export function verifyChain(logs: AuditLogItem[]): VerificationResult {
+export function verifyChain(
+  logs: AuditLogItem[],
+  options?: { requireGenesisFirst?: boolean }
+): VerificationResult {
   if (!logs || logs.length === 0) {
     return { valid: true, status: 'VALID', brokenIndex: null };
   }
@@ -53,14 +56,15 @@ export function verifyChain(logs: AuditLogItem[]): VerificationResult {
 
     // 1. Verify linkage to previous log
     if (i === 0) {
-      // Genesis record: previousHash must be null or empty string
-      if (currentLog.previousHash !== null && currentLog.previousHash !== '') {
-        return {
-          valid: false,
-          status: 'TAMPERED',
-          brokenIndex: 0,
-          error: `Genesis record must have null or empty previousHash, found: "${currentLog.previousHash}"`,
-        };
+      if (options?.requireGenesisFirst) {
+        if (currentLog.previousHash !== null && currentLog.previousHash !== '') {
+          return {
+            valid: false,
+            status: 'TAMPERED',
+            brokenIndex: 0,
+            error: `Genesis record must have null or empty previousHash, found: "${currentLog.previousHash}"`,
+          };
+        }
       }
     } else {
       const expectedPrevHash = logs[i - 1].currentHash;

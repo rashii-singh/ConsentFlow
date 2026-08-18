@@ -3,7 +3,18 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import SimplifiedConsentCard from '@/components/ai/SimplifiedConsentCard';
-import { ShieldCheck, CheckSquare, Square, Lock, ArrowRight, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
+import {
+  ShieldCheck,
+  CheckSquare,
+  Square,
+  Lock,
+  ArrowRight,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2,
+  Building2,
+  Layers,
+} from 'lucide-react';
 
 interface NoticePurpose {
   id: string;
@@ -31,31 +42,32 @@ export default function NoticeReviewForm({ notice }: NoticeReviewFormProps) {
   const router = useRouter();
 
   // Normalize purposes array
-  const rawPurposes: NoticePurpose[] = Array.isArray(notice.purposes) && notice.purposes.length > 0
-    ? notice.purposes
-    : [
-        {
-          id: 'p_core',
-          name: 'Essential Service Provision',
-          description: 'Necessary data processing to deliver core service features.',
-          required: true,
-          defaultOn: true,
-        },
-        {
-          id: 'p_analytics',
-          name: 'Usage Analytics & Performance',
-          description: 'Anonymous data collection to optimize app reliability.',
-          required: false,
-          defaultOn: false,
-        },
-        {
-          id: 'p_marketing',
-          name: 'Personalized Offers & Newsletters',
-          description: 'Custom promotional updates and discount notifications.',
-          required: false,
-          defaultOn: false,
-        },
-      ];
+  const rawPurposes: NoticePurpose[] =
+    Array.isArray(notice.purposes) && notice.purposes.length > 0
+      ? notice.purposes
+      : [
+          {
+            id: 'p_core',
+            name: 'Essential Service Provision',
+            description: 'Necessary data processing to deliver core service features.',
+            required: true,
+            defaultOn: true,
+          },
+          {
+            id: 'p_analytics',
+            name: 'Usage Analytics & Performance',
+            description: 'Anonymous data collection to optimize app reliability.',
+            required: false,
+            defaultOn: false,
+          },
+          {
+            id: 'p_marketing',
+            name: 'Personalized Offers & Newsletters',
+            description: 'Custom promotional updates and discount notifications.',
+            required: false,
+            defaultOn: false,
+          },
+        ];
 
   // Initialize granular choices (essential locked ON, optional default OFF)
   const initialChoices: Record<string, boolean> = {};
@@ -143,7 +155,7 @@ export default function NoticeReviewForm({ notice }: NoticeReviewFormProps) {
                   p.required
                     ? 'bg-slate-950/60 border-slate-800 cursor-not-allowed'
                     : isChecked
-                    ? 'bg-slate-950 border-emerald-500/40 cursor-pointer'
+                    ? 'bg-slate-950 border-emerald-500/40 cursor-pointer hover:border-emerald-500/60'
                     : 'bg-slate-950 border-slate-800/80 hover:border-slate-700 cursor-pointer'
                 }`}
               >
@@ -186,7 +198,7 @@ export default function NoticeReviewForm({ notice }: NoticeReviewFormProps) {
       <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-emerald-500/30 space-y-6 shadow-2xl">
         <div
           onClick={() => setUnderstood(!understood)}
-          className="flex items-start space-x-3 cursor-pointer group"
+          className="flex items-start space-x-3 cursor-pointer group select-none"
         >
           <div className="pt-0.5 flex-shrink-0">
             {understood ? (
@@ -206,8 +218,8 @@ export default function NoticeReviewForm({ notice }: NoticeReviewFormProps) {
         </div>
 
         {error && (
-          <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center space-x-2 animate-fadeIn">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
             <span>{error}</span>
           </div>
         )}

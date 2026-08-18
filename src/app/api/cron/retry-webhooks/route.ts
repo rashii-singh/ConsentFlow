@@ -2,6 +2,15 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { WebhookStatus } from '@prisma/client';
 import { calculateNextRetry } from '@/lib/webhooks/deliver';
+import crypto from 'crypto';
+
+function isSecretAuthorized(provided: string | null, expected: string): boolean {
+  if (!provided) return false;
+  const provBuf = Buffer.from(provided, 'utf8');
+  const expBuf = Buffer.from(expected, 'utf8');
+  if (provBuf.length !== expBuf.length) return false;
+  return crypto.timingSafeEqual(provBuf, expBuf);
+}
 
 export async function GET(req: Request) {
   try {
@@ -9,15 +18,17 @@ export async function GET(req: Request) {
     const cronSecret = process.env.CRON_SECRET;
     if (cronSecret) {
       const authHeader = req.headers.get('authorization');
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
       const { searchParams } = new URL(req.url);
       const querySecret = searchParams.get('secret');
 
-      const isHeaderValid = authHeader === `Bearer ${cronSecret}`;
-      const isQueryValid = querySecret === cronSecret;
+      const isAuthorized =
+        isSecretAuthorized(bearerToken, cronSecret) ||
+        isSecretAuthorized(querySecret, cronSecret);
 
-      if (!isHeaderValid && !isQueryValid) {
+      if (!isAuthorized) {
         return NextResponse.json(
-          { success: false, error: 'Unauthorized: Invalid CRON_SECRET' },
+          { success: false, error: 'Unauthorized: Invalid CRON_SECRET token' },
           { status: 401 }
         );
       }
@@ -40,6 +51,7 @@ export async function GET(req: Request) {
         },
       },
       take: 50, // Batch limit per invocation for serverless safety
+      orderBy: { createdAt: 'asc' },
     });
 
     let deliveredCount = 0;
@@ -48,12 +60,12 @@ export async function GET(req: Request) {
 
     for (const delivery of pendingDeliveries) {
       if (!delivery.business?.webhookUrl) {
-        // Business webhook URL removed, move to DLQ
+        // Business webhook URL removed or missing, move to DLQ
         await prisma.webhookDelivery.update({
           where: { id: delivery.id },
           data: {
             status: WebhookStatus.DLQ,
-            responseBody: 'Skipped: No valid webhookUrl found for business',
+            responseBody: 'Skipped: No valid webhookUrl found for business profile',
             nextRetryAt: null,
           },
         });
@@ -126,7 +138,7 @@ export async function GET(req: Request) {
           });
           dlqCount++;
         } else {
-          // Schedule next retry with exponential backoff
+          // Schedule next retry with exponential backoff and jitter
           const nextRetryAt = calculateNextRetry(nextAttemptCount - 1);
 
           await prisma.webhookDelivery.update({
@@ -161,7 +173,7 @@ export async function GET(req: Request) {
   }
 }
 
-// Allow POST as well for cron service compatibility
+// Allow POST as well for cron service compatibility (Vercel Cron, GitHub Actions, cron-job.org)
 export async function POST(req: Request) {
   return GET(req);
 }

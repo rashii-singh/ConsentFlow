@@ -1,7 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AlertTriangle, Clock, Send, CheckCircle2, ShieldAlert, FileText, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  Clock,
+  Send,
+  CheckCircle2,
+  ShieldAlert,
+  FileText,
+  RefreshCw,
+  AlertCircle,
+  Building2,
+} from 'lucide-react';
 
 interface BusinessItem {
   id: string;
@@ -46,12 +56,17 @@ export default function ConsumerGrievanceView({
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subject || !description) return;
 
     setSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
     try {
       const res = await fetch('/api/grievances', {
         method: 'POST',
@@ -65,14 +80,17 @@ export default function ConsumerGrievanceView({
       });
 
       const json = await res.json();
-      if (json.success) {
+      if (json.success && json.data) {
         setGrievances([json.data, ...grievances]);
         setSubject('');
         setDescription('');
         setShowForm(false);
+        setSuccessMessage('Grievance ticket filed successfully! Statutory 30-day SLA countdown initiated.');
+      } else {
+        setErrorMessage(json.error || 'Failed to file grievance ticket');
       }
-    } catch (err) {
-      console.error('Failed to file grievance:', err);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Network error while filing grievance');
     } finally {
       setSubmitting(false);
     }
@@ -94,20 +112,51 @@ export default function ConsumerGrievanceView({
         </div>
 
         <button
-          onClick={() => setShowForm(!showForm)}
-          className="py-3 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all flex items-center space-x-2 shadow-lg shadow-amber-500/20 active:scale-95"
+          onClick={() => {
+            setShowForm(!showForm);
+            setErrorMessage(null);
+          }}
+          className="py-3 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all flex items-center space-x-2 shadow-lg shadow-amber-500/20 active:scale-95 self-start sm:self-auto"
         >
           <AlertTriangle className="w-4 h-4" />
           <span>{showForm ? 'Cancel Filing' : 'File New Grievance Ticket'}</span>
         </button>
       </div>
 
+      {successMessage && (
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between animate-fadeIn">
+          <div className="flex items-center space-x-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <span>{successMessage}</span>
+          </div>
+          <button
+            onClick={() => setSuccessMessage(null)}
+            className="text-slate-400 hover:text-white text-xs font-bold"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Grievance Filing Form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-5 shadow-2xl animate-fadeIn">
-          <div className="border-b border-slate-800 pb-3">
+        <form
+          onSubmit={handleSubmit}
+          className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-5 shadow-2xl animate-fadeIn"
+        >
+          <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
             <h3 className="text-sm font-bold text-white">File Formal Complaint Ticket</h3>
+            <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+              DPDP Act 2023 Section 13
+            </span>
           </div>
+
+          {errorMessage && (
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -168,7 +217,7 @@ export default function ConsumerGrievanceView({
               placeholder="Describe the non-compliance incident and requested resolution..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-600 outline-none"
+              className="w-full p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-600 outline-none leading-relaxed font-mono"
             />
           </div>
 
@@ -196,7 +245,7 @@ export default function ConsumerGrievanceView({
 
         {grievances.length === 0 ? (
           <div className="p-8 text-center rounded-2xl bg-slate-950 border border-slate-800 text-slate-500 text-xs font-mono">
-            No active grievances filed.
+            No active grievances filed. Click "File New Grievance Ticket" above to register a complaint.
           </div>
         ) : (
           <div className="space-y-4">
@@ -221,6 +270,8 @@ export default function ConsumerGrievanceView({
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                           : g.status === 'IN_PROGRESS'
                           ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                          : g.status === 'ESCALATED'
+                          ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
                           : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                       }`}
                     >
@@ -236,7 +287,7 @@ export default function ConsumerGrievanceView({
                 {(g.resolution || g.resolutionNotes) && (
                   <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200 space-y-1 font-mono">
                     <span className="font-bold text-emerald-400 uppercase text-[10px]">
-                      Fiduciary Resolution Notes ({new Date(g.resolvedAt || Date.now()).toLocaleDateString()}):
+                      Fiduciary Resolution Notes ({new Date(g.resolvedAt || g.updatedAt || Date.now()).toLocaleDateString()}):
                     </span>
                     <p>"{g.resolution || g.resolutionNotes}"</p>
                   </div>

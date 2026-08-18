@@ -49,7 +49,8 @@ export async function deliverWebhook({
     return null;
   }
 
-  const webhookSecret = business.apiKey || process.env.WEBHOOK_SECRET || 'default_webhook_secret';
+  // Ensure webhook secret is resolved server-side only
+  const webhookSecret = business.apiKey || process.env.WEBHOOK_SECRET || 'cf_server_webhook_secret_default';
   const fullEventPayload = {
     eventId: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     eventType,
@@ -61,7 +62,6 @@ export async function deliverWebhook({
   const payloadString = JSON.stringify(fullEventPayload);
   const signature = signWebhookPayload(payloadString, webhookSecret);
 
-  const startTime = Date.now();
   let responseStatus: number | null = null;
   let responseBody: string | null = null;
   let isSuccess = false;

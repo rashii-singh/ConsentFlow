@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Search, ShieldCheck, Hash, User, Building2, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
+import { Search, ShieldCheck, Hash, User, Building2, ArrowRight, CheckCircle2, Clock, X } from 'lucide-react';
 
 interface RegulatorSearchFeedProps {
   initialRecords: any[];
@@ -13,7 +13,7 @@ export default function RegulatorSearchFeed({ initialRecords }: RegulatorSearchF
 
   const filteredRecords = initialRecords.filter((rec) => {
     if (!query) return true;
-    const q = query.toLowerCase();
+    const q = query.toLowerCase().trim();
     return (
       rec.id.toLowerCase().includes(q) ||
       rec.user?.email?.toLowerCase().includes(q) ||
@@ -40,7 +40,7 @@ export default function RegulatorSearchFeed({ initialRecords }: RegulatorSearchF
             </p>
           </div>
           <span className="text-xs font-mono text-purple-400">
-            {filteredRecords.length} Records Found
+            {filteredRecords.length} / {initialRecords.length} Records Found
           </span>
         </div>
 
@@ -51,20 +51,36 @@ export default function RegulatorSearchFeed({ initialRecords }: RegulatorSearchF
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by email (e.g. consumer@demo.com), Record ID, or SHA-256 Hash..."
-            className="w-full py-3 pl-11 pr-4 rounded-2xl bg-slate-950 border border-slate-800 focus:border-purple-500 text-xs font-mono text-slate-100 placeholder:text-slate-600 outline-none transition-all"
+            className="w-full py-3 pl-11 pr-10 rounded-2xl bg-slate-950 border border-slate-800 focus:border-purple-500 text-xs font-mono text-slate-100 placeholder:text-slate-600 outline-none transition-all"
           />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              className="absolute right-3.5 top-3 text-slate-500 hover:text-slate-300 p-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Record Cards Feed */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {filteredRecords.length === 0 ? (
-          <div className="md:col-span-2 p-12 text-center rounded-3xl bg-slate-900 border border-slate-800 text-slate-500 text-xs font-mono">
-            No matching consent records found for query "{query}".
+          <div className="md:col-span-2 p-12 text-center rounded-3xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-mono space-y-3">
+            <p>No matching consent records found for query "{query}".</p>
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 font-bold transition-colors"
+              >
+                Clear Search Filter
+              </button>
+            )}
           </div>
         ) : (
           filteredRecords.map((rec) => {
-            const currentHash = rec.auditLogs?.[0]?.currentHash || 'sha256_hash_chained';
+            const currentHash = rec.auditLogs?.[0]?.currentHash || rec.hash || 'sha256_hash_chained';
             return (
               <div
                 key={rec.id}

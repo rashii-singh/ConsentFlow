@@ -1,7 +1,22 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Send, Key, Globe, CheckCircle2, AlertCircle, Clock, RefreshCw, Eye, Hash, Shield } from 'lucide-react';
+import {
+  Send,
+  Key,
+  Globe,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  RefreshCw,
+  Eye,
+  Hash,
+  Shield,
+  Copy,
+  Check,
+  AlertTriangle,
+  RotateCcw,
+} from 'lucide-react';
 
 interface WebhookLogTableProps {
   initialWebhookUrl: string;
@@ -20,16 +35,25 @@ export default function WebhookLogTable({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<any | null>(null);
   const [selectedPayload, setSelectedPayload] = useState<any | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
 
-  const handleTestWebhook = async () => {
+  const handleCopyKey = () => {
+    navigator.clipboard.writeText(apiKey);
+    setCopiedKey(true);
+    setTimeout(() => setCopiedKey(false), 2000);
+  };
+
+  const handleTestWebhook = async (overrideUrl?: string) => {
     setTesting(true);
     setTestResult(null);
+
+    const target = overrideUrl || webhookUrl;
 
     try {
       const res = await fetch('/api/webhooks/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webhookUrl }),
+        body: JSON.stringify({ webhookUrl: target }),
       });
 
       const json = await res.json();
@@ -39,7 +63,7 @@ export default function WebhookLogTable({
         setDeliveries((prev) => [json.delivery, ...prev]);
       }
     } catch (err: any) {
-      setTestResult({ success: false, error: err.message });
+      setTestResult({ success: false, error: err.message || 'Failed to dispatch test webhook' });
     } finally {
       setTesting(false);
     }
@@ -62,7 +86,6 @@ export default function WebhookLogTable({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          
           <div className="md:col-span-2 space-y-2">
             <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1">
               <Globe className="w-3.5 h-3.5 text-purple-400" />
@@ -78,10 +101,20 @@ export default function WebhookLogTable({
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1">
-              <Key className="w-3.5 h-3.5 text-amber-400" />
-              <span>HMAC Secret Key</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1">
+                <Key className="w-3.5 h-3.5 text-amber-400" />
+                <span>HMAC Secret Key</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleCopyKey}
+                className="text-[10px] text-purple-400 hover:text-purple-300 font-mono flex items-center space-x-1"
+              >
+                {copiedKey ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedKey ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
             <input
               type="text"
               readOnly
@@ -89,55 +122,69 @@ export default function WebhookLogTable({
               className="w-full py-3 px-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-400 outline-none select-all"
             />
           </div>
-
         </div>
 
         {testResult && (
           <div
             className={`p-4 rounded-2xl border text-xs space-y-1 animate-fadeIn ${
-              testResult.success
+              testResult.success && testResult.delivery?.status === 'DELIVERED'
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
             }`}
           >
             <div className="flex items-center space-x-2 font-bold">
-              {testResult.success ? (
+              {testResult.success && testResult.delivery?.status === 'DELIVERED' ? (
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
               ) : (
-                <AlertCircle className="w-4 h-4 text-rose-400" />
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
               )}
               <span>{testResult.message || testResult.error}</span>
             </div>
             {testResult.delivery && (
               <div className="font-mono text-[11px] opacity-80">
-                Status: {testResult.delivery.status} | Response Code: {testResult.delivery.responseStatus || 0}
+                Delivery Status: {testResult.delivery.status} | Response Code: {testResult.delivery.responseStatus || 0}
+                {testResult.delivery.nextRetryAt && (
+                  <span> | Scheduled Retry: {new Date(testResult.delivery.nextRetryAt).toLocaleTimeString()}</span>
+                )}
               </div>
             )}
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
           <p className="text-xs text-slate-400">
-            Tip: You can use free endpoints from <code className="text-purple-300 font-mono">webhook.site</code> to inspect live payloads.
+            Tip: Test live delivery to an active URL or simulate endpoint failure to demonstrate the retry queue.
           </p>
 
-          <button
-            disabled={testing}
-            onClick={handleTestWebhook}
-            className="py-3 px-6 rounded-2xl bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold text-xs transition-all flex items-center space-x-2 shadow-lg shadow-purple-500/20 active:scale-95"
-          >
-            {testing ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-                <span>Firing Signed Payload...</span>
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4" />
-                <span>Test Webhook Dispatch</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center space-x-2.5">
+            <button
+              disabled={testing}
+              onClick={() => handleTestWebhook('https://invalid-nonexistent-endpoint-test.internal/webhook')}
+              className="py-2.5 px-4 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold text-xs transition-all flex items-center space-x-1.5 active:scale-95"
+              title="Dispatches to an unreachable endpoint to demonstrate exponential retry scheduling"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+              <span>Simulate Failure & Retry Queue</span>
+            </button>
+
+            <button
+              disabled={testing}
+              onClick={() => handleTestWebhook()}
+              className="py-2.5 px-5 rounded-2xl bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold text-xs transition-all flex items-center space-x-2 shadow-lg shadow-purple-500/20 active:scale-95"
+            >
+              {testing ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                  <span>Firing Payload...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Test Live Dispatch</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -173,7 +220,7 @@ export default function WebhookLogTable({
               {deliveries.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
-                    No webhook deliveries logged yet. Click "Test Webhook Dispatch" above.
+                    No webhook deliveries logged yet. Click "Test Live Dispatch" above.
                   </td>
                 </tr>
               ) : (
@@ -188,6 +235,8 @@ export default function WebhookLogTable({
                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                             : item.status === 'RETRYING'
                             ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                            : item.status === 'DLQ'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
                             : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
                         }`}
                       >
@@ -196,8 +245,8 @@ export default function WebhookLogTable({
                     </td>
 
                     <td className="py-3 px-4">
-                      <span className={item.responseStatus === 200 ? 'text-emerald-400' : 'text-slate-400'}>
-                        {item.responseStatus || 'TIMEOUT'}
+                      <span className={item.responseStatus === 200 ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                        {item.responseStatus || 'FAILED / TIMEOUT'}
                       </span>
                     </td>
 
@@ -247,14 +296,14 @@ export default function WebhookLogTable({
 
             <div className="space-y-3 text-xs font-mono">
               <div>
-                <span className="text-slate-400">HMAC SHA-256 Signature Header:</span>
+                <span className="text-slate-400">HMAC SHA-256 Signature Header (x-consentflow-signature):</span>
                 <div className="bg-slate-950 p-2 rounded-xl text-purple-300 border border-slate-800 mt-1 select-all break-all">
                   {selectedPayload.signature}
                 </div>
               </div>
 
               <div>
-                <span className="text-slate-400">JSON Request Body:</span>
+                <span className="text-slate-400">JSON Request Body Dispatched:</span>
                 <pre className="bg-slate-950 p-4 rounded-xl text-emerald-300 border border-slate-800 mt-1 overflow-x-auto max-h-60">
                   {JSON.stringify(selectedPayload.payload, null, 2)}
                 </pre>
@@ -262,7 +311,7 @@ export default function WebhookLogTable({
 
               {selectedPayload.responseBody && (
                 <div>
-                  <span className="text-slate-400">Server Response Body:</span>
+                  <span className="text-slate-400">Target Server Response / Log:</span>
                   <pre className="bg-slate-950 p-3 rounded-xl text-slate-300 border border-slate-800 mt-1 overflow-x-auto max-h-32">
                     {selectedPayload.responseBody}
                   </pre>

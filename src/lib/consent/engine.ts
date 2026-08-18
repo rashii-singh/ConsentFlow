@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { hashAction } from '@/lib/crypto/audit';
 import { ConsentAction } from '@prisma/client';
-import { GrantConsentInput, RevokeConsentInput } from './validator';
+import { GrantConsentInput, RevokeConsentInput } from '@/lib/validators';
 import { deliverWebhook } from '@/lib/webhooks/deliver';
 
 export interface ConsentEngineResult {
@@ -16,11 +16,12 @@ export interface ConsentEngineResult {
     revokedAt?: Date | null;
   };
   error?: string;
+  isForbidden?: boolean;
 }
 
 /**
  * Retrieves the latest global audit log's currentHash to maintain the system-wide
- * cryptographic hash chain SHA256(previousHash + payload).
+ * cryptographic hash chain SHA256((previousHash || '') + canonicalPayload).
  */
 async function getLatestAuditHash(): Promise<string | null> {
   const lastLog = await prisma.auditLog.findFirst({
@@ -34,14 +35,14 @@ async function getLatestAuditHash(): Promise<string | null> {
  * Executes a Grant Consent transaction:
  * 1. Checks notice existence & fetches businessId.
  * 2. Fetches latest audit chain hash.
- * 3. Creates ConsentRecord & chained AuditLog in a database transaction.
+ * 3. Creates ConsentRecord & chained AuditLog in an atomic database transaction.
  * 4. Synchronously dispatches webhook to business endpoint.
  */
 export async function processGrantConsent(
   userId: string,
   input: GrantConsentInput
 ): Promise<ConsentEngineResult> {
-  // Verify notice exists
+  // Verify notice exists and is active
   const notice = await prisma.consentNotice.findUnique({
     where: { id: input.noticeId },
     select: { id: true, businessId: true, isActive: true },
@@ -55,7 +56,7 @@ export async function processGrantConsent(
     return { success: false, error: 'Consent Notice is currently inactive' };
   }
 
-  // Get previous hash in chain
+  // Get previous hash in global chain
   const previousHash = await getLatestAuditHash();
 
   const timestamp = new Date();
@@ -70,7 +71,7 @@ export async function processGrantConsent(
 
   const { currentHash } = hashAction(payload, previousHash);
 
-  // Execute database transaction
+  // Execute database transaction atomically
   const result = await prisma.$transaction(async (tx) => {
     const record = await tx.consentRecord.create({
       data: {
@@ -133,7 +134,7 @@ export async function processGrantConsent(
 
 /**
  * Executes a Revoke Consent transaction:
- * 1. Checks record existence & verifies user ownership.
+ * 1. Checks record existence & strictly verifies user ownership.
  * 2. Fetches latest audit chain hash.
  * 3. Updates ConsentRecord (granted = false, revokedAt = now) & creates chained AuditLog.
  * 4. Synchronously dispatches webhook to business endpoint.
@@ -152,8 +153,13 @@ export async function processRevokeConsent(
     return { success: false, error: 'Consent Record not found' };
   }
 
+  // Cross-user ownership enforcement
   if (record.userId !== userId) {
-    return { success: false, error: 'Forbidden: You do not own this consent record' };
+    return {
+      success: false,
+      error: 'Forbidden: You do not own this consent record',
+      isForbidden: true,
+    };
   }
 
   if (!record.granted) {

@@ -13,9 +13,11 @@ export default function BusinessGrievanceTable({ initialGrievances }: BusinessGr
   const [status, setStatus] = useState<string>('IN_PROGRESS');
   const [notes, setNotes] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleUpdate = async (ticketId: string) => {
     setSaving(true);
+    setError(null);
     try {
       const res = await fetch('/api/grievances', {
         method: 'PATCH',
@@ -34,9 +36,11 @@ export default function BusinessGrievanceTable({ initialGrievances }: BusinessGr
         );
         setEditingId(null);
         setNotes('');
+      } else {
+        setError(json.error || 'Failed to update grievance ticket');
       }
-    } catch (err) {
-      console.error('Failed to resolve grievance:', err);
+    } catch (err: any) {
+      setError(err.message || 'Failed to resolve grievance');
     } finally {
       setSaving(false);
     }
@@ -84,6 +88,8 @@ export default function BusinessGrievanceTable({ initialGrievances }: BusinessGr
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                           : g.status === 'IN_PROGRESS'
                           ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                          : g.status === 'ESCALATED'
+                          ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
                           : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                       }`}
                     >
@@ -95,6 +101,7 @@ export default function BusinessGrievanceTable({ initialGrievances }: BusinessGr
                         setEditingId(isEditing ? null : g.id);
                         setStatus(g.status);
                         setNotes(g.resolution || g.resolutionNotes || '');
+                        setError(null);
                       }}
                       className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors"
                     >
@@ -130,7 +137,7 @@ export default function BusinessGrievanceTable({ initialGrievances }: BusinessGr
                           <option value="OPEN">OPEN</option>
                           <option value="IN_PROGRESS">IN_PROGRESS</option>
                           <option value="RESOLVED">RESOLVED</option>
-                          <option value="REJECTED">REJECTED</option>
+                          <option value="ESCALATED">ESCALATED</option>
                         </select>
                       </div>
 
@@ -145,6 +152,12 @@ export default function BusinessGrievanceTable({ initialGrievances }: BusinessGr
                         />
                       </div>
                     </div>
+
+                    {error && (
+                      <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl">
+                        {error}
+                      </div>
+                    )}
 
                     <button
                       disabled={saving}

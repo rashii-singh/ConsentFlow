@@ -8,47 +8,65 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
   providers: [
     Credentials({
-      name: 'Demo Account Credentials',
+      name: 'Credentials',
       credentials: {
         email: { label: 'Email', type: 'email' },
       },
       async authorize(credentials) {
-        const email = credentials?.email as string;
+        const rawEmail = credentials?.email as string | undefined;
+        if (!rawEmail || typeof rawEmail !== 'string') {
+          return null;
+        }
 
-        if (!email) return null;
-
-        const normalizedEmail = email.toLowerCase().trim();
-
-        // Deterministic role mapping for demo accounts
-        let role: UserRole = UserRole.CONSUMER;
-        let name = 'Demo User';
-
-        if (normalizedEmail === 'consumer@demo.com') {
-          role = UserRole.CONSUMER;
-          name = 'Ananya Sharma';
-        } else if (normalizedEmail === 'business@demo.com') {
-          role = UserRole.BUSINESS;
-          name = 'Vikram Mehta';
-        } else if (normalizedEmail === 'regulator@demo.com') {
-          role = UserRole.REGULATOR;
-          name = 'Data Protection Authority Officer';
-        } else {
-          return null; // Only demo accounts allowed for hackathon
+        const normalizedEmail = rawEmail.toLowerCase().trim();
+        if (!normalizedEmail || !normalizedEmail.includes('@')) {
+          return null;
         }
 
         try {
-          // Attempt DB lookup or auto-creation for demo accounts
-          const dbUser = await prisma.user.upsert({
+          // 1. Query database for existing user
+          let dbUser = await prisma.user.findUnique({
             where: { email: normalizedEmail },
-            update: { name, role },
-            create: {
-              email: normalizedEmail,
-              name,
-              role,
-              preferredLang: 'en',
-            },
             include: { business: true },
           });
+
+          // 2. Auto-initialize recognized demo users if not yet in database
+          if (!dbUser) {
+            if (normalizedEmail === 'consumer@demo.com') {
+              dbUser = await prisma.user.create({
+                data: {
+                  email: 'consumer@demo.com',
+                  name: 'Ananya Sharma',
+                  role: UserRole.CONSUMER,
+                  preferredLang: 'hi',
+                },
+                include: { business: true },
+              });
+            } else if (normalizedEmail === 'business@demo.com') {
+              dbUser = await prisma.user.create({
+                data: {
+                  email: 'business@demo.com',
+                  name: 'Vikram Mehta',
+                  role: UserRole.BUSINESS,
+                  preferredLang: 'en',
+                },
+                include: { business: true },
+              });
+            } else if (normalizedEmail === 'regulator@demo.com') {
+              dbUser = await prisma.user.create({
+                data: {
+                  email: 'regulator@demo.com',
+                  name: 'Data Protection Authority Officer',
+                  role: UserRole.REGULATOR,
+                  preferredLang: 'en',
+                },
+                include: { business: true },
+              });
+            } else {
+              // Non-demo unregistered email -> reject authentication
+              return null;
+            }
+          }
 
           return {
             id: dbUser.id,
@@ -59,23 +77,45 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             businessId: dbUser.business?.id || null,
           };
         } catch (error) {
-          console.warn('DB lookup failed during auth, falling back to deterministic demo user:', error);
-        }
+          console.warn('Database error during authorize, checking demo accounts fallback:', error);
 
-        // Fallback deterministic user if DB is offline
-        return {
-          id: `demo_${normalizedEmail.split('@')[0]}`,
-          email: normalizedEmail,
-          name: name,
-          role: role,
-          preferredLang: 'en',
-          businessId: role === UserRole.BUSINESS ? 'biz_01' : null,
-        };
+          // Resilient fallback for recognized demo accounts if DB is unavailable
+          if (normalizedEmail === 'consumer@demo.com') {
+            return {
+              id: 'demo_consumer',
+              email: 'consumer@demo.com',
+              name: 'Ananya Sharma',
+              role: UserRole.CONSUMER,
+              preferredLang: 'hi',
+              businessId: null,
+            };
+          } else if (normalizedEmail === 'business@demo.com') {
+            return {
+              id: 'demo_business',
+              email: 'business@demo.com',
+              name: 'Vikram Mehta',
+              role: UserRole.BUSINESS,
+              preferredLang: 'en',
+              businessId: 'biz_01',
+            };
+          } else if (normalizedEmail === 'regulator@demo.com') {
+            return {
+              id: 'demo_regulator',
+              email: 'regulator@demo.com',
+              name: 'Data Protection Authority Officer',
+              role: UserRole.REGULATOR,
+              preferredLang: 'en',
+              businessId: null,
+            };
+          }
+
+          return null;
+        }
       },
     }),
   ],
   session: {
     strategy: 'jwt',
   },
-  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'consentflow_v2_hackathon_demo_secret_key_123',
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'cf_server_auth_secret_demo_2026',
 });

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/auth';
-import { revokeConsentSchema } from '@/lib/consent/validator';
+import { revokeConsentSchema } from '@/lib/validators';
 import { processRevokeConsent } from '@/lib/consent/engine';
+import { UserRole } from '@prisma/client';
 
 export async function POST(req: Request) {
   try {
@@ -14,7 +15,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = await req.json();
+    if (session.user.role !== UserRole.CONSUMER) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only Data Principal (CONSUMER) accounts can revoke consent' },
+        { status: 403 }
+      );
+    }
+
+    const body = await req.json().catch(() => ({}));
 
     // Validate request body
     const parseResult = revokeConsentSchema.safeParse(body);
@@ -32,7 +40,7 @@ export async function POST(req: Request) {
     const result = await processRevokeConsent(session.user.id, parseResult.data);
 
     if (!result.success) {
-      const status = result.error?.includes('Forbidden') ? 403 : 400;
+      const status = result.isForbidden ? 403 : 400;
       return NextResponse.json({ success: false, error: result.error }, { status });
     }
 

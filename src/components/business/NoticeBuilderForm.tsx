@@ -2,13 +2,14 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2, Sparkles, RefreshCw, CheckCircle2, Lock, FileText } from 'lucide-react';
+import { Plus, Trash2, Sparkles, RefreshCw, CheckCircle2, AlertCircle, Lock, FileText } from 'lucide-react';
 
 interface PurposeInput {
   id: string;
   name: string;
   description: string;
   required: boolean;
+  defaultOn?: boolean;
 }
 
 export default function NoticeBuilderForm() {
@@ -22,23 +23,26 @@ export default function NoticeBuilderForm() {
       name: 'Essential Service Provision',
       description: 'Necessary processing to fulfill requested service under Section 6 of DPDP Act 2023.',
       required: true,
+      defaultOn: true,
     },
     {
       id: 'p_marketing',
       name: 'Personalized Offers & Updates',
       description: 'Customized recommendations and promotional notifications.',
       required: false,
+      defaultOn: false,
     },
   ]);
 
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const addPurpose = () => {
     const newId = `p_custom_${Date.now()}`;
     setPurposes([
       ...purposes,
-      { id: newId, name: '', description: '', required: false },
+      { id: newId, name: '', description: '', required: false, defaultOn: false },
     ]);
   };
 
@@ -59,6 +63,7 @@ export default function NoticeBuilderForm() {
 
     setSubmitting(true);
     setSuccessMsg(false);
+    setErrorMessage(null);
 
     try {
       const res = await fetch('/api/business/notices', {
@@ -72,21 +77,26 @@ export default function NoticeBuilderForm() {
       });
 
       const json = await res.json();
-      if (json.success) {
+      if (json.success && json.data) {
         setSuccessMsg(true);
         setTitle('');
         setRawLegalText('');
         router.refresh();
+      } else {
+        setErrorMessage(json.error || 'Failed to create notice');
       }
-    } catch (err) {
-      console.error('Failed to create notice:', err);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Network error while creating notice');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-cyan-500/30 space-y-6 shadow-2xl">
+    <form
+      onSubmit={handleSubmit}
+      className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-cyan-500/30 space-y-6 shadow-2xl"
+    >
       <div className="space-y-1 border-b border-slate-800 pb-4">
         <div className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 text-[10px] font-bold border border-cyan-500/30 uppercase tracking-wider">
           <Sparkles className="w-3 h-3 text-cyan-400" />
@@ -97,6 +107,13 @@ export default function NoticeBuilderForm() {
           Submitting this notice will automatically trigger Groq Llama 3.1 8B AI summarization in English & Indic languages.
         </p>
       </div>
+
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center space-x-2 animate-fadeIn">
+          <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
 
       {/* Notice Title */}
       <div className="space-y-2">

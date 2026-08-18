@@ -2,14 +2,20 @@ import { auth } from '@/lib/auth/auth';
 import { prisma } from '@/lib/prisma';
 import RoleSwitcher from '@/components/RoleSwitcher';
 import RegulatorSearchFeed from '@/components/regulator/RegulatorSearchFeed';
-import { Eye, ShieldCheck, Search, Scale, FileCheck } from 'lucide-react';
+import { Eye, ShieldCheck, Search, Scale, FileCheck, Building2, AlertTriangle } from 'lucide-react';
 
 export default async function RegulatorDashboard() {
   const session = await auth();
 
-  // Query initial consent records for inspection
+  // Query system-wide statistics for regulator overview
+  const totalBusinesses = await prisma.business.count();
+  const totalGrievances = await prisma.grievanceTicket.count({
+    where: { status: { in: ['OPEN', 'IN_PROGRESS', 'ESCALATED'] } },
+  });
+
+  // Query consent records for inspection
   const initialRecords = await prisma.consentRecord.findMany({
-    take: 20,
+    take: 50,
     orderBy: { createdAt: 'desc' },
     include: {
       user: { select: { id: true, email: true, name: true } },
@@ -39,12 +45,20 @@ export default async function RegulatorDashboard() {
             </p>
           </div>
 
-          <div className="flex items-center space-x-4">
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center min-w-[90px]">
               <div className="text-2xl font-black text-purple-400">{initialRecords.length}</div>
               <div className="text-[10px] text-slate-400 uppercase font-mono mt-0.5">Audited Records</div>
             </div>
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center">
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center min-w-[90px]">
+              <div className="text-2xl font-black text-cyan-400">{totalBusinesses}</div>
+              <div className="text-[10px] text-slate-400 uppercase font-mono mt-0.5">Fiduciaries</div>
+            </div>
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center min-w-[90px]">
+              <div className="text-2xl font-black text-amber-400">{totalGrievances}</div>
+              <div className="text-[10px] text-slate-400 uppercase font-mono mt-0.5">Open Complaints</div>
+            </div>
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center min-w-[90px]">
               <div className="text-2xl font-black text-emerald-400">100%</div>
               <div className="text-[10px] text-slate-400 uppercase font-mono mt-0.5">Audit Coverage</div>
             </div>

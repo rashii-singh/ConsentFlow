@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/auth';
 import { getUserConsents } from '@/lib/consent/engine';
+import { UserRole } from '@prisma/client';
 
 export async function GET() {
   try {
@@ -10,6 +11,13 @@ export async function GET() {
       return NextResponse.json(
         { success: false, error: 'Unauthorized: Authentication required' },
         { status: 401 }
+      );
+    }
+
+    if (session.user.role !== UserRole.CONSUMER) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only Data Principal (CONSUMER) accounts can access personal consents' },
+        { status: 403 }
       );
     }
 

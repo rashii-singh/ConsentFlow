@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/auth';
 import { processGrantConsent, processRevokeConsent } from '@/lib/consent/engine';
-import { grantConsentSchema, revokeConsentSchema } from '@/lib/consent/validator';
+import { grantConsentSchema, revokeConsentSchema } from '@/lib/validators';
+import { UserRole } from '@prisma/client';
 
 /**
  * POST /api/consent
  * Generic consent action endpoint (grant or revoke).
- * Delegates to the same consent engine used by /api/consent/grant and
- * /api/consent/revoke so that ownership checks and audit chaining are
- * always enforced.
+ * Strictly requires authenticated CONSUMER role and delegates to consent engine.
  */
 export async function POST(request: Request) {
   try {
@@ -21,21 +20,32 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    if (session.user.role !== UserRole.CONSUMER) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only Data Principal (CONSUMER) accounts can grant or revoke consent' },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json().catch(() => ({}));
     const { action } = body;
 
     if (action === 'REVOKE') {
       const parseResult = revokeConsentSchema.safeParse(body);
       if (!parseResult.success) {
         return NextResponse.json(
-          { success: false, error: 'Validation Error', details: parseResult.error.flatten().fieldErrors },
+          {
+            success: false,
+            error: 'Validation Error',
+            details: parseResult.error.flatten().fieldErrors,
+          },
           { status: 400 }
         );
       }
 
       const result = await processRevokeConsent(session.user.id, parseResult.data);
       if (!result.success) {
-        const status = result.error?.includes('Forbidden') ? 403 : 400;
+        const status = result.isForbidden ? 403 : 400;
         return NextResponse.json({ success: false, error: result.error }, { status });
       }
 
@@ -46,13 +56,17 @@ export async function POST(request: Request) {
     const parseResult = grantConsentSchema.safeParse(body);
     if (!parseResult.success) {
       return NextResponse.json(
-        { success: false, error: 'Validation Error', details: parseResult.error.flatten().fieldErrors },
+        {
+          success: false,
+          error: 'Validation Error',
+          details: parseResult.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
 
     const ipAddress =
-      request.headers.get('x-forwarded-for')?.split(',')[0] ||
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
       request.headers.get('x-real-ip') ||
       '127.0.0.1';
     const userAgent = request.headers.get('user-agent') || 'ConsentFlow-Client';
