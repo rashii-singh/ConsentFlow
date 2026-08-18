@@ -49,34 +49,29 @@ export const createNoticeSchema = z.object({
     .min(1, { message: 'At least one data processing purpose is required' }),
 });
 
+export type PurposeItemInput = z.infer<typeof purposeItemSchema>;
 export type CreateNoticeInput = z.infer<typeof createNoticeSchema>;
 
 // ============================================================================
-// 3. Grievance Schemas
+// 3. Grievance Ticket Schemas
 // ============================================================================
 
 export const createGrievanceSchema = z.object({
   businessId: z.string().min(1, { message: 'Target Business ID is required' }),
   type: z.nativeEnum(GrievanceType, {
     errorMap: () => ({
-      message: 'Grievance type must be one of: ACCESS, ERASURE, CORRECTION, NOMINATION',
+      message: 'Type must be ACCESS, ERASURE, CORRECTION, or NOMINATION',
     }),
   }),
-  subject: z
-    .string()
-    .min(3, { message: 'Subject must be at least 3 characters' })
-    .max(200, { message: 'Subject must not exceed 200 characters' }),
-  description: z
-    .string()
-    .min(10, { message: 'Description must be at least 10 characters' })
-    .max(5000, { message: 'Description must not exceed 5000 characters' }),
+  subject: z.string().min(3, { message: 'Subject must be at least 3 characters' }).max(200),
+  description: z.string().min(10, { message: 'Description must be at least 10 characters' }),
 });
 
 export const updateGrievanceSchema = z.object({
   ticketId: z.string().min(1, { message: 'Ticket ID is required' }),
   status: z.nativeEnum(GrievanceStatus, {
     errorMap: () => ({
-      message: 'Status must be one of: OPEN, IN_PROGRESS, RESOLVED, ESCALATED',
+      message: 'Status must be OPEN, IN_PROGRESS, RESOLVED, or ESCALATED',
     }),
   }),
   resolutionNotes: z.string().max(2000).optional(),
@@ -169,3 +164,19 @@ export const simplifyNoticeSchema = z.object({
 });
 
 export type SimplifyNoticeInput = z.infer<typeof simplifyNoticeSchema>;
+
+// ============================================================================
+// 6. User Registration / Onboarding Schema
+// ============================================================================
+
+export const registerUserSchema = z.object({
+  name: z.string().min(2, { message: 'Full name must be at least 2 characters' }).max(100),
+  email: z.string().email({ message: 'Valid email address is required' }),
+  role: z.nativeEnum(UserRole, {
+    errorMap: () => ({ message: 'Role must be CONSUMER, BUSINESS, or REGULATOR' }),
+  }).default(UserRole.CONSUMER),
+  organizationName: z.string().max(100).optional(),
+  preferredLang: z.string().max(10).default('en'),
+});
+
+export type RegisterUserInput = z.infer<typeof registerUserSchema>;

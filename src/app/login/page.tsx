@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, Suspense } from 'react';
-import { signIn } from 'next-auth/react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { authenticate } from '@/lib/auth/actions';
 import {
   Shield,
   UserCheck,
@@ -14,77 +14,139 @@ import {
   AlertCircle,
   Mail,
   RefreshCw,
+  UserPlus,
+  LogIn,
+  User,
+  Globe,
 } from 'lucide-react';
 
 function LoginFormContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const urlError = searchParams.get('error');
   const callbackUrl = searchParams.get('callbackUrl');
 
-  const [emailInput, setEmailInput] = useState('');
+  // Mode: 'signin' or 'register'
+  const [activeTab, setActiveTab] = useState<'signin' | 'register'>('signin');
+
+  // Sign In state
+  const [signInEmail, setSignInEmail] = useState('');
+
+  // Register state
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regRole, setRegRole] = useState<'CONSUMER' | 'BUSINESS' | 'REGULATOR'>('CONSUMER');
+  const [regOrgName, setRegOrgName] = useState('');
+  const [regLang, setRegLang] = useState('en');
+
+  const [loading, setLoading] = useState(false);
   const [loadingEmail, setLoadingEmail] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(
     urlError === 'CredentialsSignin'
-      ? 'Authentication failed: Invalid credentials or unregistered email address.'
+      ? 'Authentication failed: Account not found. Please register or select a demo account.'
       : urlError
       ? `Authentication Error: ${urlError}`
       : null
   );
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSignIn = async (email: string, targetPath?: string) => {
     const trimmedEmail = email.toLowerCase().trim();
     if (!trimmedEmail) {
-      setErrorMessage('Please enter an email address.');
+      setErrorMessage('Please enter your account email address.');
       return;
     }
 
     setLoadingEmail(trimmedEmail);
+    setLoading(true);
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     try {
-      const res = await signIn('credentials', {
-        email: trimmedEmail,
-        redirect: false,
-        callbackUrl: targetPath || callbackUrl || undefined,
-      });
+      const destination =
+        targetPath ||
+        callbackUrl ||
+        (trimmedEmail === 'business@demo.com'
+          ? '/business'
+          : trimmedEmail === 'regulator@demo.com'
+          ? '/regulator'
+          : '/consumer');
 
-      if (!res || res.error) {
+      const res = await authenticate(trimmedEmail, destination);
+      if (res && !res.success) {
         setErrorMessage(
-          'Authentication failed: Unregistered demo email. Please select one of the registered demo accounts below.'
+          res.error ||
+            'Authentication failed: Account not found. Please register an account below or select one of the demo personas.'
         );
-      } else if (res.ok) {
-        // Redirect based on role or target path
-        if (targetPath) {
-          router.push(targetPath);
-        } else if (callbackUrl) {
-          router.push(callbackUrl);
-        } else if (trimmedEmail === 'consumer@demo.com') {
-          router.push('/consumer');
-        } else if (trimmedEmail === 'business@demo.com') {
-          router.push('/business');
-        } else if (trimmedEmail === 'regulator@demo.com') {
-          router.push('/regulator');
-        } else {
-          router.push('/consumer');
-        }
-        router.refresh();
       }
     } catch (err: any) {
+      if (err?.digest?.startsWith('NEXT_REDIRECT') || err?.message === 'NEXT_REDIRECT') {
+        return;
+      }
       console.error('Sign in error:', err);
       setErrorMessage(err.message || 'Unexpected authentication error');
     } finally {
+      setLoading(false);
       setLoadingEmail(null);
     }
   };
 
-  const handleManualSubmit = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    handleSignIn(emailInput);
+    const trimmedEmail = regEmail.toLowerCase().trim();
+    const trimmedName = regName.trim();
+
+    if (!trimmedName || !trimmedEmail) {
+      setErrorMessage('Please fill in all required fields.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      // 1. Register user in database
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: trimmedName,
+          email: trimmedEmail,
+          role: regRole,
+          organizationName: regRole === 'BUSINESS' ? regOrgName.trim() : undefined,
+          preferredLang: regLang,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to register account');
+      }
+
+      setSuccessMessage('Account created successfully! Signing in...');
+
+      // 2. Automatically sign in with newly registered account
+      const destination =
+        regRole === 'BUSINESS' ? '/business' : regRole === 'REGULATOR' ? '/regulator' : '/consumer';
+      
+      const authRes = await authenticate(trimmedEmail, destination);
+      if (authRes && !authRes.success) {
+        throw new Error(authRes.error || 'Account created, but sign-in failed. Please sign in manually.');
+      }
+    } catch (err: any) {
+      if (err?.digest?.startsWith('NEXT_REDIRECT') || err?.message === 'NEXT_REDIRECT') {
+        return;
+      }
+      console.error('Registration error:', err);
+      setErrorMessage(err.message || 'An error occurred while creating your account.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="max-w-md w-full space-y-8 relative z-10">
+    <div className="max-w-md w-full space-y-6 relative z-10">
       
       {/* Brand Header */}
       <div className="text-center space-y-3">
@@ -102,10 +164,11 @@ function LoginFormContent() {
           </p>
         </div>
         <p className="text-xs text-slate-400 max-w-sm mx-auto">
-          Authenticate with a registered account to access your role-protected compliance portal.
+          Authenticate with a registered account or onboard as a new user to access your role-protected portal.
         </p>
       </div>
 
+      {/* Alerts */}
       {errorMessage && (
         <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start space-x-2.5 animate-fadeIn">
           <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
@@ -113,38 +176,185 @@ function LoginFormContent() {
         </div>
       )}
 
-      {/* Manual Email Login Form */}
-      <form
-        onSubmit={handleManualSubmit}
-        className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-4 backdrop-blur-xl shadow-2xl"
-      >
-        <div className="space-y-1">
-          <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
-            <Mail className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Account Email Sign In</span>
-          </label>
-          <input
-            type="email"
-            placeholder="e.g. consumer@demo.com"
-            value={emailInput}
-            onChange={(e) => setEmailInput(e.target.value)}
-            className="w-full py-3 px-4 rounded-2xl bg-slate-950 border border-slate-800 focus:border-emerald-500 text-xs font-mono text-slate-100 placeholder:text-slate-600 outline-none transition-all"
-          />
+      {successMessage && (
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-start space-x-2.5 animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+          <span className="leading-relaxed">{successMessage}</span>
+        </div>
+      )}
+
+      {/* Mode Tabs (Sign In / Register) */}
+      <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-5 backdrop-blur-xl shadow-2xl">
+        <div className="grid grid-cols-2 p-1 rounded-2xl bg-slate-950 border border-slate-800/80">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('signin');
+              setErrorMessage(null);
+            }}
+            className={`py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center space-x-1.5 ${
+              activeTab === 'signin'
+                ? 'bg-slate-800 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Sign In</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('register');
+              setErrorMessage(null);
+            }}
+            className={`py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center space-x-1.5 ${
+              activeTab === 'register'
+                ? 'bg-slate-800 text-emerald-400 shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Register Account</span>
+          </button>
         </div>
 
-        <button
-          type="submit"
-          disabled={!emailInput || !!loadingEmail}
-          className="w-full py-3 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20 active:scale-[0.99]"
-        >
-          {loadingEmail === emailInput.toLowerCase().trim() ? (
-            <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-          ) : (
-            <ArrowRight className="w-4 h-4" />
-          )}
-          <span>Sign In to Portal</span>
-        </button>
-      </form>
+        {/* Tab 1: Sign In Form */}
+        {activeTab === 'signin' && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSignIn(signInEmail);
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+                <Mail className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Account Email Address</span>
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="e.g. yourname@example.com"
+                value={signInEmail}
+                onChange={(e) => setSignInEmail(e.target.value)}
+                className="w-full py-3 px-4 rounded-2xl bg-slate-950 border border-slate-800 focus:border-emerald-500 text-xs font-mono text-slate-100 placeholder:text-slate-600 outline-none transition-all"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={!signInEmail || loading}
+              className="w-full py-3 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20 active:scale-[0.99]"
+            >
+              {loading && !loadingEmail ? (
+                <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+              ) : (
+                <ArrowRight className="w-4 h-4" />
+              )}
+              <span>Sign In to Portal</span>
+            </button>
+          </form>
+        )}
+
+        {/* Tab 2: Register Form */}
+        {activeTab === 'register' && (
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+                <User className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Full Name</span>
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Rashi Singh"
+                value={regName}
+                onChange={(e) => setRegName(e.target.value)}
+                className="w-full py-2.5 px-4 rounded-2xl bg-slate-950 border border-slate-800 focus:border-emerald-500 text-xs text-slate-100 placeholder:text-slate-600 outline-none transition-all"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+                <Mail className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Email Address</span>
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="e.g. rashi1912singh@gmail.com"
+                value={regEmail}
+                onChange={(e) => setRegEmail(e.target.value)}
+                className="w-full py-2.5 px-4 rounded-2xl bg-slate-950 border border-slate-800 focus:border-emerald-500 text-xs font-mono text-slate-100 placeholder:text-slate-600 outline-none transition-all"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+                <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Account Role</span>
+              </label>
+              <select
+                value={regRole}
+                onChange={(e) => setRegRole(e.target.value as any)}
+                className="w-full py-2.5 px-4 rounded-2xl bg-slate-950 border border-slate-800 focus:border-emerald-500 text-xs text-slate-200 outline-none transition-all"
+              >
+                <option value="CONSUMER">Citizen / Data Principal (Consumer)</option>
+                <option value="BUSINESS">Data Fiduciary / Enterprise (Business)</option>
+                <option value="REGULATOR">Data Protection Authority Officer (Regulator)</option>
+              </select>
+            </div>
+
+            {regRole === 'BUSINESS' && (
+              <div className="space-y-1 animate-fadeIn">
+                <label className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center space-x-1.5">
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>Organization Name</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. HealthCare Solutions Pvt Ltd"
+                  value={regOrgName}
+                  onChange={(e) => setRegOrgName(e.target.value)}
+                  className="w-full py-2.5 px-4 rounded-2xl bg-slate-950 border border-cyan-500/40 focus:border-cyan-400 text-xs text-slate-100 placeholder:text-slate-600 outline-none transition-all"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+                <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Preferred Language</span>
+              </label>
+              <select
+                value={regLang}
+                onChange={(e) => setRegLang(e.target.value)}
+                className="w-full py-2.5 px-4 rounded-2xl bg-slate-950 border border-slate-800 focus:border-emerald-500 text-xs text-slate-200 outline-none transition-all"
+              >
+                <option value="en">English</option>
+                <option value="hi">Hindi (हिंदी)</option>
+                <option value="kn">Kannada (ಕನ್ನಡ)</option>
+                <option value="ta">Tamil (தமிழ்)</option>
+                <option value="te">Telugu (తెలుగు)</option>
+              </select>
+            </div>
+
+            <button
+              type="submit"
+              disabled={!regName || !regEmail || loading}
+              className="w-full py-3 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20 active:scale-[0.99]"
+            >
+              {loading ? (
+                <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+              ) : (
+                <UserPlus className="w-4 h-4" />
+              )}
+              <span>Create Account & Sign In</span>
+            </button>
+          </form>
+        )}
+      </div>
 
       {/* 1-Click Demo Accounts Selector */}
       <div className="space-y-3 bg-slate-900/90 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl shadow-2xl">
@@ -156,7 +366,7 @@ function LoginFormContent() {
         {/* 1. Consumer */}
         <button
           type="button"
-          disabled={!!loadingEmail}
+          disabled={loading}
           onClick={() => handleSignIn('consumer@demo.com', '/consumer')}
           className="w-full group p-3.5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-emerald-500/50 hover:bg-slate-900 transition-all duration-200 text-left flex items-center justify-between"
         >
@@ -184,7 +394,7 @@ function LoginFormContent() {
         {/* 2. Business */}
         <button
           type="button"
-          disabled={!!loadingEmail}
+          disabled={loading}
           onClick={() => handleSignIn('business@demo.com', '/business')}
           className="w-full group p-3.5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-900 transition-all duration-200 text-left flex items-center justify-between"
         >
@@ -212,7 +422,7 @@ function LoginFormContent() {
         {/* 3. Regulator */}
         <button
           type="button"
-          disabled={!!loadingEmail}
+          disabled={loading}
           onClick={() => handleSignIn('regulator@demo.com', '/regulator')}
           className="w-full group p-3.5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-purple-500/50 hover:bg-slate-900 transition-all duration-200 text-left flex items-center justify-between"
         >

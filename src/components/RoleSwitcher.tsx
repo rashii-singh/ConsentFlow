@@ -1,19 +1,37 @@
 'use client';
 
-import React from 'react';
-import { useSession, signIn, signOut } from 'next-auth/react';
-import { Users, Building2, Eye, LogOut, Shield } from 'lucide-react';
+import React, { useTransition } from 'react';
+import { useSession } from 'next-auth/react';
+import { Users, Building2, Eye, LogOut, Shield, RefreshCw } from 'lucide-react';
+import { authenticate, handleSignOut } from '@/lib/auth/actions';
 
 export default function RoleSwitcher() {
   const { data: session } = useSession();
+  const [isPending, startTransition] = useTransition();
 
   const currentRole = session?.user?.role;
-  const currentEmail = session?.user?.email;
 
-  const handleRoleSwitch = async (email: string, targetPath: string) => {
-    await signIn('credentials', {
-      email,
-      redirectTo: targetPath,
+  const handleRoleSwitch = (email: string, targetPath: string) => {
+    startTransition(async () => {
+      try {
+        await authenticate(email, targetPath);
+      } catch (err: any) {
+        if (!err?.digest?.startsWith('NEXT_REDIRECT')) {
+          window.location.href = targetPath;
+        }
+      }
+    });
+  };
+
+  const onSignOut = () => {
+    startTransition(async () => {
+      try {
+        await handleSignOut();
+      } catch (err: any) {
+        if (!err?.digest?.startsWith('NEXT_REDIRECT')) {
+          window.location.href = '/login';
+        }
+      }
     });
   };
 
@@ -28,11 +46,17 @@ export default function RoleSwitcher() {
         </div>
         {session && (
           <button
-            onClick={() => signOut({ callbackUrl: '/login' })}
+            type="button"
+            onClick={onSignOut}
+            disabled={isPending}
             className="p-1 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition-colors"
             title="Sign Out"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            {isPending ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-400" />
+            ) : (
+              <LogOut className="w-3.5 h-3.5" />
+            )}
           </button>
         )}
       </div>
@@ -55,6 +79,8 @@ export default function RoleSwitcher() {
       {/* Quick Switch Buttons */}
       <div className="grid grid-cols-3 gap-1.5 pt-1">
         <button
+          type="button"
+          disabled={isPending}
           onClick={() => handleRoleSwitch('consumer@demo.com', '/consumer')}
           className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all border ${
             currentRole === 'CONSUMER'
@@ -68,6 +94,8 @@ export default function RoleSwitcher() {
         </button>
 
         <button
+          type="button"
+          disabled={isPending}
           onClick={() => handleRoleSwitch('business@demo.com', '/business')}
           className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all border ${
             currentRole === 'BUSINESS'
@@ -81,6 +109,8 @@ export default function RoleSwitcher() {
         </button>
 
         <button
+          type="button"
+          disabled={isPending}
           onClick={() => handleRoleSwitch('regulator@demo.com', '/regulator')}
           className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all border ${
             currentRole === 'REGULATOR'
