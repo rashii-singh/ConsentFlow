@@ -11,8 +11,6 @@ export default async function BusinessWebhooksPage() {
   const business = await prisma.business.findFirst({
     where: { userId: session?.user?.id || '' },
     include: { webhookLogs: { orderBy: { createdAt: 'desc' }, take: 50 } },
-  }) || await prisma.business.findFirst({
-    include: { webhookLogs: { orderBy: { createdAt: 'desc' }, take: 50 } },
   });
 
   const webhookUrl = business?.webhookUrl || 'https://webhook.site/demo-endpoint';

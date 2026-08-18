@@ -11,8 +11,6 @@ export default async function BusinessNoticesPage() {
   const business = await prisma.business.findFirst({
     where: { userId: session?.user?.id || '' },
     include: { notices: { orderBy: { createdAt: 'desc' } } },
-  }) || await prisma.business.findFirst({
-    include: { notices: { orderBy: { createdAt: 'desc' } } },
   });
 
   const notices = business?.notices || [];

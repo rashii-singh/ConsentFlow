@@ -16,13 +16,6 @@ export default async function BusinessDashboard() {
       webhookLogs: { orderBy: { createdAt: 'desc' }, take: 50 },
       grievances: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } },
     },
-  }) || await prisma.business.findFirst({
-    include: {
-      notices: true,
-      consents: { orderBy: { createdAt: 'desc' }, take: 10, include: { notice: true, auditLogs: { orderBy: { timestamp: 'desc' } } } },
-      webhookLogs: { orderBy: { createdAt: 'desc' }, take: 50 },
-      grievances: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } },
-    },
   });
 
   const totalConsents = business?.consents?.length || 0;

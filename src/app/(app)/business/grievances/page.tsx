@@ -10,13 +10,13 @@ export default async function BusinessGrievancesPage() {
 
   const business = await prisma.business.findFirst({
     where: { userId: session?.user?.id || '' },
-  }) || await prisma.business.findFirst();
+  });
 
-  const grievances = await prisma.grievanceTicket.findMany({
-    where: business?.id ? { businessId: business.id } : {},
+  const grievances = business?.id ? await prisma.grievanceTicket.findMany({
+    where: { businessId: business.id },
     include: { user: true },
     orderBy: { createdAt: 'desc' },
-  });
+  }) : [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 space-y-8 selection:bg-amber-500 selection:text-slate-950">
