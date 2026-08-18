@@ -527,7 +527,7 @@ npm run dev
 Open:
 
 ```text
-http://localhost:3000
+https://consent-flow-amber.vercel.app
 ```
 
 ---

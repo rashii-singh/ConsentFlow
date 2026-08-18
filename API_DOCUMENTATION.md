@@ -7,7 +7,7 @@ ConsentFlow exposes REST-style API routes through the Next.js App Router.
 
 For local development:
 
-http://localhost:3000
+https://consent-flow-amber.vercel.app
 
 For production, replace the base URL with the deployed application URL.
 
