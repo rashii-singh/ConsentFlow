@@ -37,27 +37,32 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
 
         try {
-          // Attempt DB lookup
-          const dbUser = await prisma.user.findUnique({
+          // Attempt DB lookup or auto-creation for demo accounts
+          const dbUser = await prisma.user.upsert({
             where: { email: normalizedEmail },
+            update: { name, role },
+            create: {
+              email: normalizedEmail,
+              name,
+              role,
+              preferredLang: 'en',
+            },
             include: { business: true },
           });
 
-          if (dbUser) {
-            return {
-              id: dbUser.id,
-              email: dbUser.email,
-              name: dbUser.name,
-              role: dbUser.role,
-              preferredLang: dbUser.preferredLang,
-              businessId: dbUser.business?.id || null,
-            };
-          }
+          return {
+            id: dbUser.id,
+            email: dbUser.email,
+            name: dbUser.name,
+            role: dbUser.role,
+            preferredLang: dbUser.preferredLang,
+            businessId: dbUser.business?.id || null,
+          };
         } catch (error) {
           console.warn('DB lookup failed during auth, falling back to deterministic demo user:', error);
         }
 
-        // Fallback deterministic user
+        // Fallback deterministic user if DB is offline
         return {
           id: `demo_${normalizedEmail.split('@')[0]}`,
           email: normalizedEmail,
